@@ -1,0 +1,16 @@
+{
+  "name": "claudepet",
+  "version": "0.1.0",
+  "description": "A desktop companion for Windows that lets you chat with Claude from anywhere.",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron ."
+  },
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "typescript": "^7.0.2"
+  }
+}

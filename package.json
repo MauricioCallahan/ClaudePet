@@ -4,8 +4,8 @@
   "description": "A desktop companion for Windows that lets you chat with Claude from anywhere.",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc && electron ."
+    "build": "tsc && node scripts/copy-assets.js",
+    "dev": "npm run build && electron ."
   },
   "license": "MIT",
   "private": true,

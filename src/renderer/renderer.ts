@@ -1,6 +1,7 @@
 const messages = document.getElementById('messages')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
+let chatId = crypto.randomUUID();
 
 // textContent, never innerHTML: replies in Milestone 2 are untrusted text.
 function addMessage(text: string, who: 'user' | 'claude'): void {
@@ -16,6 +17,7 @@ form.addEventListener('submit', (e) => {
   const text = input.value.trim();
   if (!text) return;
   addMessage(text, 'user');
+  pet.sendMessage(chatId, text);
   input.value = '';
 });
 
@@ -31,13 +33,20 @@ input.addEventListener('keydown', (e) => {
 document.getElementById('close')!.addEventListener('click', () => window.close());
 
 // Provided by the preload script.
-declare const pet: { onNewChat(cb: () => void): void };
+declare const pet: {
+  onNewChat(cb: () => void): void;
+  onOpenChat(cb: (id: string) => void): void;
+  sendMessage(chatId: string, text: string): void;
+};
 
-function newChat(): void {
+// shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history
+function resetChat(id: string): void {
+  chatId = id;
   messages.replaceChildren();
   addMessage("Hi, I'm ClaudePet.", 'claude');
   input.value = '';
   input.focus();
 }
-pet.onNewChat(newChat);
-newChat();
+pet.onNewChat(() => resetChat(crypto.randomUUID()));
+pet.onOpenChat(resetChat);
+resetChat(chatId);

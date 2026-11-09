@@ -1,22 +1,36 @@
 import { Menu, Tray } from 'electron';
 import path from 'node:path';
+import type { Chat } from './chats';
 
 export interface TrayActions {
   toggle(): void;
   isVisible(): boolean;
   newChat(): void;
+  recent(): Chat[];
+  openChat(id: string): void;
 }
 
 // Module-level so the Tray is not garbage-collected (the icon would vanish).
 let tray: Tray | null = null;
 let actions: TrayActions;
 
-// Rebuild whenever state the menu shows changes (window visibility, later the chat list).
+// Rebuild whenever state the menu shows changes (window visibility, chat list).
 export function refreshTray(): void {
+  const chats = actions.recent();
   tray?.setContextMenu(
     Menu.buildFromTemplate([
       { label: actions.isVisible() ? 'Hide' : 'Show', click: actions.toggle },
       { label: 'New chat', click: actions.newChat },
+      {
+        label: 'Recent chats',
+        submenu: chats.length
+          ? chats.map((c) => ({
+              // '&' marks an accelerator in Windows menus; double it to show a literal one.
+              label: c.title.replace(/&/g, '&&'),
+              click: () => actions.openChat(c.id),
+            }))
+          : [{ label: 'No recent chats', enabled: false }],
+      },
     ]),
   );
 }

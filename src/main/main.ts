@@ -1,5 +1,6 @@
-import { app, BrowserWindow, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
+import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
 import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
 import { createTray, refreshTray } from './tray';
@@ -63,12 +64,14 @@ function createWindow(): void {
   w.on('hide', refreshTray);
 }
 
-function newChat(): void {
+function showAndSend(channel: string, ...args: unknown[]): void {
   if (!win) return;
   win.show();
   win.focus();
-  win.webContents.send('chat:new');
+  win.webContents.send(channel, ...args);
 }
+
+let chats: Chat[] = [];
 
 // Shared by the tray and (Bullet 3) the global hotkey.
 export function toggleWindow(): void {
@@ -87,8 +90,22 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', () => win?.focus());
   app.whenReady().then(() => {
+    chats = loadChats();
+    // The renderer is untrusted input: check types and cap sizes before storing.
+    ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
+      if (typeof id !== 'string' || typeof text !== 'string' || id.length > 100) return;
+      chats = upsert(chats, id, text, Date.now());
+      saveChats(chats);
+      refreshTray();
+    });
     createWindow();
-    createTray({ toggle: toggleWindow, isVisible: () => !!win?.isVisible(), newChat });
+    createTray({
+      toggle: toggleWindow,
+      isVisible: () => !!win?.isVisible(),
+      newChat: () => showAndSend('chat:new'),
+      recent: () => recent(chats),
+      openChat: (id) => showAndSend('chat:open', id),
+    });
   });
   app.on('before-quit', () => (isQuitting = true));
 }

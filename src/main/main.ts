@@ -89,6 +89,7 @@ let inflight: AbortController | null = null;
 async function runReply(id: string, text: string): Promise<void> {
   const ac = new AbortController();
   inflight = ac;
+  refreshTray();
   const send = (channel: string, ...args: unknown[]) => win?.webContents.send(channel, ...args);
   send('reply:start');
   try {
@@ -100,6 +101,7 @@ async function runReply(id: string, text: string): Promise<void> {
     else send('reply:error', err instanceof Error ? err.message : String(err));
   } finally {
     inflight = null;
+    refreshTray();
   }
 }
 
@@ -159,9 +161,17 @@ if (!app.requestSingleInstanceLock()) {
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),
-      newChat: () => showAndSend('chat:new'),
+      isThinking: () => !!inflight,
+      // Switching chats ends the running reply so it cannot stream into the wrong chat.
+      newChat: () => {
+        inflight?.abort();
+        showAndSend('chat:new');
+      },
       recent: () => recent(chats),
-      openChat: (id) => showAndSend('chat:open', id),
+      openChat: (id) => {
+        inflight?.abort();
+        showAndSend('chat:open', id);
+      },
     });
     const { hotkey: saved } = loadSettings();
     registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);

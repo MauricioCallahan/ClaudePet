@@ -5,6 +5,7 @@ import type { Chat } from './chats';
 export interface TrayActions {
   toggle(): void;
   isVisible(): boolean;
+  isThinking(): boolean;
   newChat(): void;
   recent(): Chat[];
   openChat(id: string): void;
@@ -17,6 +18,8 @@ let actions: TrayActions;
 // Rebuild whenever state the menu shows changes (window visibility, chat list).
 export function refreshTray(): void {
   const chats = actions.recent();
+  // Hidden while a reply is running: the tooltip is the only sign that something is happening.
+  tray?.setToolTip(actions.isThinking() && !actions.isVisible() ? 'Chats: thinking…' : 'Chats');
   tray?.setContextMenu(
     Menu.buildFromTemplate([
       { label: actions.isVisible() ? 'Hide' : 'Show', click: actions.toggle },
@@ -50,7 +53,6 @@ export function destroyTray(): void {
 export function createTray(a: TrayActions): void {
   actions = a;
   tray = new Tray(path.join(__dirname, '../../assets/tray.ico'));
-  tray.setToolTip('Chats');
   tray.on('click', a.toggle);
   refreshTray();
 }

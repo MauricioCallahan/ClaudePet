@@ -87,6 +87,7 @@ pet.onReplyError((message) => {
 // shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history
 function resetChat(id: string): void {
   chatId = id;
+  reply = null; // a reply cut off by New chat must not write into the new chat
   setState('idle');
   messages.replaceChildren();
   addMessage("Hi, I'm ClaudePet.", 'claude');

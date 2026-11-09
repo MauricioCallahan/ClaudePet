@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
 import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
-import { createTray, refreshTray } from './tray';
+import { createTray, destroyTray, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
@@ -88,7 +88,10 @@ export function toggleWindow(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => win?.focus());
+  app.on('second-instance', () => {
+    win?.show(); // focus() alone does nothing while the window is hidden in the tray
+    win?.focus();
+  });
   app.whenReady().then(() => {
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
@@ -107,5 +110,10 @@ if (!app.requestSingleInstanceLock()) {
       openChat: (id) => showAndSend('chat:open', id),
     });
   });
-  app.on('before-quit', () => (isQuitting = true));
+  // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
+  app.on('before-quit', () => {
+    isQuitting = true;
+    destroyTray();
+  });
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 }

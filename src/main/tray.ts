@@ -1,4 +1,4 @@
-import { Menu, Tray } from 'electron';
+import { app, Menu, Tray } from 'electron';
 import path from 'node:path';
 import type { Chat } from './chats';
 
@@ -31,8 +31,16 @@ export function refreshTray(): void {
             }))
           : [{ label: 'No recent chats', enabled: false }],
       },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
     ]),
   );
+}
+
+// Without this the icon can linger in the notification area after exit.
+export function destroyTray(): void {
+  tray?.destroy();
+  tray = null;
 }
 
 export function createTray(a: TrayActions): void {

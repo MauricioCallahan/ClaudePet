@@ -1,3 +1,5 @@
+import { shouldStick } from './scroll.js';
+
 const messages = document.getElementById('messages')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
@@ -16,12 +18,12 @@ function setState(s: State): void {
 }
 
 // textContent, never innerHTML: replies in Milestone 2 are untrusted text.
-function addMessage(text: string, who: 'user' | 'claude'): HTMLElement {
+function addMessage(text: string, who: 'user' | 'claude', scroll = true): HTMLElement {
   const el = document.createElement('div');
   el.className = `msg ${who}`;
   el.textContent = text;
   messages.appendChild(el);
-  messages.scrollTop = messages.scrollHeight;
+  if (scroll) messages.scrollTop = messages.scrollHeight;
   return el;
 }
 
@@ -65,17 +67,37 @@ declare const pet: {
 
 // The reply bubble grows as chunks arrive.
 let reply: HTMLElement | null = null;
+let pending = ''; // chunks wait here so the DOM is written once per frame
+let frame = 0;
+function flush(): void {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  if (!pending) return;
+  // Decide before growing: follow the reply only if the reader is at the bottom.
+  const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
+  reply ??= addMessage('', 'claude', false); // created on the first word, so no empty bubble while waiting
+  reply.textContent += pending;
+  pending = '';
+  if (stick) messages.scrollTop = messages.scrollHeight;
+}
+function dropReply(): void {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  pending = '';
+  reply = null;
+}
 pet.onReplyStart(() => setState('thinking'));
 pet.onReplyChunk((text) => {
-  reply ??= addMessage('', 'claude'); // created on the first word, so no empty bubble while waiting
-  reply.textContent += text;
-  messages.scrollTop = messages.scrollHeight;
+  pending += text;
+  frame ||= requestAnimationFrame(flush);
 });
 pet.onReplyEnd(() => {
+  flush();
   reply = null;
   setState('idle');
 });
 pet.onReplyError((message) => {
+  flush();
   reply = null;
   addMessage(message, 'claude');
   setState('error');
@@ -84,7 +106,7 @@ pet.onReplyError((message) => {
 // shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history
 function resetChat(id: string): void {
   chatId = id;
-  reply = null; // a reply cut off by New chat must not write into the new chat
+  dropReply(); // a reply cut off by New chat must not write into the new chat
   setState('idle');
   messages.replaceChildren();
   addMessage("Hi, I'm ClaudePet.", 'claude');

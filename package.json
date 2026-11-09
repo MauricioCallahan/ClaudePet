@@ -4,9 +4,9 @@
   "description": "A desktop companion for Windows that lets you chat with Claude from anywhere.",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.js",
+    "build": "tsc && tsc -p tsconfig.renderer.json && node scripts/copy-assets.js",
     "dev": "npm run build && electron .",
-    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js dist/main/chats.test.js dist/main/bridge.test.js"
+    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js dist/main/chats.test.js dist/main/bridge.test.js dist/renderer/scroll.test.js"
   },
   "license": "MIT",
   "private": true,

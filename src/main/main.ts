@@ -2,7 +2,7 @@ import { app, BrowserWindow, screen } from 'electron';
 import path from 'node:path';
 import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
-import { createTray } from './tray';
+import { createTray, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
@@ -59,6 +59,19 @@ function createWindow(): void {
     }
   });
   w.on('closed', () => (win = null));
+  w.on('show', refreshTray);
+  w.on('hide', refreshTray);
+}
+
+// Shared by the tray and (Bullet 3) the global hotkey.
+export function toggleWindow(): void {
+  if (!win) return;
+  if (win.isVisible()) {
+    win.hide();
+  } else {
+    win.show();
+    win.focus();
+  }
 }
 
 // Only one pet at a time: a second launch focuses the first.
@@ -68,7 +81,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => win?.focus());
   app.whenReady().then(() => {
     createWindow();
-    createTray();
+    createTray({ toggle: toggleWindow, isVisible: () => !!win?.isVisible() });
   });
   app.on('before-quit', () => (isQuitting = true));
 }

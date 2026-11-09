@@ -149,7 +149,12 @@ if (!app.requestSingleInstanceLock()) {
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
       if (typeof id !== 'string' || typeof text !== 'string') return;
-      if (id.length > 100 || text.length > MAX_MESSAGE_LENGTH) return;
+      if (id.length > 100) return;
+      if (text.length > MAX_MESSAGE_LENGTH) {
+        // The renderer is already waiting on a reply; without this it would stay on Stop forever.
+        win?.webContents.send('reply:error', `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).`);
+        return;
+      }
       if (inflight) return; // one reply at a time; the renderer swaps Send for Stop
       chats = upsert(chats, id, text, Date.now());
       saveChats(chats);

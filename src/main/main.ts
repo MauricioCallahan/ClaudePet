@@ -65,10 +65,15 @@ function createWindow(): void {
   w.on('hide', refreshTray);
 }
 
+// focus() alone does nothing while the window is hidden in the tray, so show first.
+function showWindow(): void {
+  win?.show();
+  win?.focus();
+}
+
 function showAndSend(channel: string, ...args: unknown[]): void {
   if (!win) return;
-  win.show();
-  win.focus();
+  showWindow();
   win.webContents.send(channel, ...args);
 }
 
@@ -77,22 +82,15 @@ let chats: Chat[] = [];
 // Shared by the tray and (Bullet 3) the global hotkey.
 export function toggleWindow(): void {
   if (!win) return;
-  if (win.isVisible()) {
-    win.hide();
-  } else {
-    win.show();
-    win.focus();
-  }
+  if (win.isVisible()) win.hide();
+  else showWindow();
 }
 
 // Only one pet at a time: a second launch focuses the first.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    win?.show(); // focus() alone does nothing while the window is hidden in the tray
-    win?.focus();
-  });
+  app.on('second-instance', showWindow);
   app.whenReady().then(() => {
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.

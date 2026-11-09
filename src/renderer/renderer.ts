@@ -27,6 +27,7 @@ function addMessage(text: string, who: 'user' | 'claude', scroll = true): HTMLEl
   const el = document.createElement('div');
   el.className = `msg ${who}`;
   el.textContent = text;
+  el.title = new Date().toLocaleTimeString(); // hover shows when it was sent
   messages.appendChild(el);
   if (scroll) messages.scrollTop = messages.scrollHeight;
   return el;
@@ -73,12 +74,15 @@ declare const pet: {
 
 // One listener for every Copy button, including ones created by later renders.
 messages.addEventListener('click', (e) => {
-  const code = codeToCopy(e.target);
+  const target = e.target as HTMLElement;
+  const whole = target.closest<HTMLElement>('button.copy-reply'); // copies the reply's Markdown source
+  const code = whole ? rawText.get(whole.parentElement!) ?? '' : codeToCopy(target);
   if (code === null) return;
   pet.copyText(code);
-  const button = e.target as HTMLElement;
+  const button = target;
   button.textContent = 'Copied';
-  setTimeout(() => (button.textContent = 'Copy'), 1500);
+  const label = whole ? 'Copy reply' : 'Copy';
+  setTimeout(() => (button.textContent = label), 1500);
 });
 
 // The reply bubble grows as chunks arrive.
@@ -92,12 +96,21 @@ function flush(): void {
   if (!pending) return;
   // Decide before growing: follow the reply only if the reader is at the bottom.
   const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
-  reply ??= addMessage('', 'claude', false); // created on the first word, so no empty bubble while waiting
+  if (!reply) {
+    // Created on the first word, so no empty bubble while waiting. The body is re-rendered; the button stays.
+    reply = addMessage('', 'claude', false);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-reply';
+    button.textContent = 'Copy reply';
+    reply.append(document.createElement('div'), button);
+  }
+  const body = reply.firstElementChild as HTMLElement;
   // shortcut: re-parses the whole reply each frame, quadratic for very long replies; stream-parse if that shows up
   const raw = (rawText.get(reply) ?? '') + pending;
   rawText.set(reply, raw);
-  reply.innerHTML = renderMarkdown(raw, purify);
-  addCopyButtons(reply);
+  body.innerHTML = renderMarkdown(raw, purify);
+  addCopyButtons(body);
   pending = '';
   if (stick) messages.scrollTop = messages.scrollHeight;
 }

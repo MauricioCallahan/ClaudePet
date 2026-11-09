@@ -1,4 +1,4 @@
-import { clipboard, contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 
 // Expose narrow callbacks only, never ipcRenderer itself.
 contextBridge.exposeInMainWorld('pet', {
@@ -18,8 +18,8 @@ contextBridge.exposeInMainWorld('pet', {
     ipcRenderer.send('chat:stop');
   },
   copyText: (text: string): void => {
-    // Electron's clipboard: navigator.clipboard needs focus and a secure context, which a file:// page lacks.
-    if (typeof text === 'string') clipboard.writeText(text);
+    // Via main: navigator.clipboard needs focus and a secure context, and Electron's sandboxed preload has no clipboard.
+    ipcRenderer.send('clipboard:write', text);
   },
   // Reply lifecycle: start, then any number of chunks, then end or error.
   onReplyStart: (cb: () => void): void => {

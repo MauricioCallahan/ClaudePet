@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
 import { FakeBridge, type Bridge } from './bridge';
@@ -174,6 +174,9 @@ if (!app.requestSingleInstanceLock()) {
       saveChats(chats);
       refreshTray();
       void runReply(id, text);
+    });
+    ipcMain.on('clipboard:write', (_e, text: unknown) => {
+      if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
     createWindow();

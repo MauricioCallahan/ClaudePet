@@ -5,7 +5,7 @@ button, textarea { -webkit-app-region: no-drag; }
 header button { border: 0; background: none; font-size: 18px; cursor: pointer; }
 header button:hover { background: #e04040; color: #fff; }
 main { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.msg { max-width: 85%; padding: 6px 10px; border-radius: 10px; overflow-wrap: anywhere; }
+.msg { position: relative; max-width: 85%; padding: 6px 10px; border-radius: 10px; overflow-wrap: anywhere; }
 .claude { align-self: flex-start; background: #f0f0f0; }
 .user { align-self: flex-end; background: #d9e8ff; white-space: pre-wrap; }
 .claude > :first-child { margin-top: 0; }
@@ -21,3 +21,5 @@ form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #ddd; }
 textarea { flex: 1; resize: none; font: inherit; padding: 6px; }
 form button { padding: 0 12px; cursor: pointer; }
 .claude pre .copy { position: absolute; top: 4px; right: 4px; padding: 1px 6px; font-size: 12px; cursor: pointer; user-select: none; }
+.copy-reply { position: absolute; top: 2px; right: 2px; padding: 0 6px; font-size: 11px; cursor: pointer; opacity: 0; }
+.msg:hover .copy-reply, .copy-reply:focus-visible { opacity: 1; }

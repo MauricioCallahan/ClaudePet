@@ -87,6 +87,31 @@ export function toggleWindow(): void {
   else showWindow();
 }
 
+const DEFAULT_HOTKEY = 'CommandOrControl+,';
+let hotkey = '';
+
+// Swap the global shortcut; the v0.2 settings panel only needs to call this and saveSettings.
+export function registerHotkey(accel: string): boolean {
+  if (hotkey) globalShortcut.unregister(hotkey);
+  hotkey = '';
+  let ok = false;
+  try {
+    // Visible but behind another app: bring it forward instead of hiding it.
+    ok = globalShortcut.register(accel, () => {
+      if (win?.isVisible() && !win.isFocused()) showWindow();
+      else toggleWindow();
+    });
+  } catch {
+    // register() throws on a malformed accelerator in settings.json
+  }
+  if (ok) hotkey = accel;
+  else {
+    console.error(`Could not register ${accel}: invalid or used by another app`);
+    notify('Hotkey unavailable', `${accel} is invalid or used by another app. Use the tray icon to open ClaudePet.`);
+  }
+  return ok;
+}
+
 // Only one pet at a time: a second launch focuses the first.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -110,15 +135,8 @@ if (!app.requestSingleInstanceLock()) {
       recent: () => recent(chats),
       openChat: (id) => showAndSend('chat:open', id),
     });
-    // Visible but behind another app: bring it forward instead of hiding it.
-    const ok = globalShortcut.register('CommandOrControl+,', () => {
-      if (win?.isVisible() && !win.isFocused()) showWindow();
-      else toggleWindow();
-    });
-    if (!ok) {
-      console.error('Could not register Ctrl+,: another app is using it');
-      notify('Hotkey unavailable', 'Ctrl+, is used by another app. Use the tray icon to open ClaudePet.');
-    }
+    const { hotkey } = loadSettings();
+    registerHotkey(typeof hotkey === 'string' && hotkey ? hotkey : DEFAULT_HOTKEY);
   });
   // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
   app.on('before-quit', () => {

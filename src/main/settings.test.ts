@@ -5,6 +5,9 @@ import { parseSettings } from './settings';
 test('returns a valid settings object', () => {
   assert.deepEqual(parseSettings('{"x":1,"y":2}'), { x: 1, y: 2 });
 });
+test('keeps a hotkey string', () => {
+  assert.deepEqual(parseSettings('{"hotkey":"Alt+Space"}'), { hotkey: 'Alt+Space' });
+});
 test('falls back to {} for JSON that is not an object', () => {
   for (const text of ['null', '5', '"x"', '[1]']) assert.deepEqual(parseSettings(text), {});
 });

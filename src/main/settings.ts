@@ -5,6 +5,7 @@ import path from 'node:path';
 export interface Settings {
   x?: number;
   y?: number;
+  hotkey?: string; // Electron accelerator, default CommandOrControl+,
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

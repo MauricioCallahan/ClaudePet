@@ -15,6 +15,8 @@ It runs Claude runs in the background, signing in with your existing Claude Pr
 - Claude Code installed and signed in
 
 
+## Known issues
+- ClaudePet claims **Ctrl+,** while it runs, so apps that use it for their own Settings (for example VS Code) lose that shortcut. To use another key, set `"hotkey"` (an [Electron accelerator](https://www.electronjs.org/docs/latest/api/accelerator), e.g. `"Alt+Space"`) in `%APPDATA%\ClaudePet\settings.json` and restart. A settings panel will replace this in v0.2.
 
 ## License
 

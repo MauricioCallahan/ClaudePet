@@ -2,6 +2,7 @@ const messages = document.getElementById('messages')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
 const thinking = document.getElementById('thinking')!;
+const sendButton = document.getElementById('send')!;
 let chatId: string = crypto.randomUUID();
 
 // The UI is drawn from this one value; call setState instead of toggling elements.
@@ -10,6 +11,7 @@ let state: State = 'idle';
 function setState(s: State): void {
   state = s;
   thinking.hidden = s !== 'thinking';
+  sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
 }
 
 // textContent, never innerHTML: replies in Milestone 2 are untrusted text.
@@ -24,7 +26,10 @@ function addMessage(text: string, who: 'user' | 'claude'): HTMLElement {
 
 form.addEventListener('submit', (e) => {
   e.preventDefault();
-  if (state === 'thinking') return;
+  if (state === 'thinking') {
+    pet.stopReply(); // the button reads Stop while a reply is running
+    return;
+  }
   const text = input.value.trim();
   if (!text) return;
   addMessage(text, 'user');
@@ -37,7 +42,7 @@ form.addEventListener('submit', (e) => {
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    form.requestSubmit();
+    if (state !== 'thinking') form.requestSubmit(); // Enter must not act as Stop
   }
 });
 

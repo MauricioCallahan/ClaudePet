@@ -1,6 +1,7 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
+import { FakeBridge, type Bridge } from './bridge';
 import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
@@ -80,6 +81,28 @@ function showAndSend(channel: string, ...args: unknown[]): void {
 
 let chats: Chat[] = [];
 
+// Milestone 2 swaps in the real claude bridge here.
+const bridge: Bridge = new FakeBridge();
+let inflight: AbortController | null = null;
+
+// Streams one reply to the renderer as reply:start, reply:chunk..., then reply:end or reply:error.
+async function runReply(id: string, text: string): Promise<void> {
+  const ac = new AbortController();
+  inflight = ac;
+  const send = (channel: string, ...args: unknown[]) => win?.webContents.send(channel, ...args);
+  send('reply:start');
+  try {
+    for await (const chunk of bridge.send(id, text, ac.signal)) send('reply:chunk', chunk);
+    send('reply:end');
+  } catch (err) {
+    // Stop and New chat abort on purpose: that is an ordinary end, not an error.
+    if (ac.signal.aborted) send('reply:end');
+    else send('reply:error', err instanceof Error ? err.message : String(err));
+  } finally {
+    inflight = null;
+  }
+}
+
 // Shared by the tray and (Bullet 3) the global hotkey.
 export function toggleWindow(): void {
   if (!win) return;
@@ -125,10 +148,13 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
       if (typeof id !== 'string' || typeof text !== 'string') return;
       if (id.length > 100 || text.length > MAX_MESSAGE_LENGTH) return;
+      if (inflight) return; // one reply at a time; the renderer swaps Send for Stop
       chats = upsert(chats, id, text, Date.now());
       saveChats(chats);
       refreshTray();
+      void runReply(id, text);
     });
+    ipcMain.on('chat:stop', () => inflight?.abort());
     createWindow();
     createTray({
       toggle: toggleWindow,

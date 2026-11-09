@@ -1,8 +1,9 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
 import { FakeBridge, type Bridge } from './bridge';
 import { fitPosition } from './bounds';
+import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
@@ -37,6 +38,19 @@ function createWindow(): void {
     },
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+  // Links in replies open in the default browser, never inside the box.
+  const openWeb = (url: string) => {
+    if (isWebUrl(url)) void shell.openExternal(url);
+  };
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openWeb(url);
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (e, url) => {
+    e.preventDefault();
+    openWeb(url);
+  });
 
   // Save the position once a drag settles, not on every pixel.
   const w = win;
@@ -160,6 +174,9 @@ if (!app.requestSingleInstanceLock()) {
       saveChats(chats);
       refreshTray();
       void runReply(id, text);
+    });
+    ipcMain.on('clipboard:write', (_e, text: unknown) => {
+      if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
     createWindow();

@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('pet', {
   stopReply: (): void => {
     ipcRenderer.send('chat:stop');
   },
+  copyText: (text: string): void => {
+    // Via main: navigator.clipboard needs focus and a secure context, and Electron's sandboxed preload has no clipboard.
+    ipcRenderer.send('clipboard:write', text);
+  },
   // Reply lifecycle: start, then any number of chunks, then end or error.
   onReplyStart: (cb: () => void): void => {
     ipcRenderer.on('reply:start', () => cb());

@@ -1,3 +1,10 @@
+import DOMPurify from './vendor/purify.es.mjs';
+import { addCopyButtons, codeToCopy } from './codeBlocks.js';
+import { renderMarkdown } from './markdown.js';
+import { shouldStick } from './scroll.js';
+
+const purify = DOMPurify(window);
+
 const messages = document.getElementById('messages')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
@@ -15,13 +22,14 @@ function setState(s: State): void {
   sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
 }
 
-// textContent, never innerHTML: replies in Milestone 2 are untrusted text.
-function addMessage(text: string, who: 'user' | 'claude'): HTMLElement {
+// User and error text goes in with textContent; Claude's replies are untrusted Markdown, rendered only through renderMarkdown (sanitized).
+function addMessage(text: string, who: 'user' | 'claude', scroll = true): HTMLElement {
   const el = document.createElement('div');
   el.className = `msg ${who}`;
   el.textContent = text;
+  el.title = new Date().toLocaleTimeString(); // hover shows when it was sent
   messages.appendChild(el);
-  messages.scrollTop = messages.scrollHeight;
+  if (scroll) messages.scrollTop = messages.scrollHeight;
   return el;
 }
 
@@ -57,25 +65,73 @@ declare const pet: {
   onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
   stopReply(): void;
+  copyText(text: string): void;
   onReplyStart(cb: () => void): void;
   onReplyChunk(cb: (text: string) => void): void;
   onReplyEnd(cb: () => void): void;
   onReplyError(cb: (message: string) => void): void;
 };
 
+// One listener for every Copy button, including ones created by later renders.
+messages.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const whole = target.closest<HTMLElement>('button.copy-reply'); // copies the reply's Markdown source
+  const code = whole ? rawText.get(whole.parentElement!) ?? '' : codeToCopy(target);
+  if (code === null) return;
+  pet.copyText(code);
+  const button = target;
+  button.textContent = 'Copied';
+  const label = whole ? 'Copy reply' : 'Copy';
+  setTimeout(() => (button.textContent = label), 1500);
+});
+
 // The reply bubble grows as chunks arrive.
 let reply: HTMLElement | null = null;
+const rawText = new WeakMap<HTMLElement, string>(); // the Markdown source of each reply bubble
+let pending = ''; // chunks wait here so the DOM is written once per frame
+let frame = 0;
+function flush(): void {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  if (!pending) return;
+  // Decide before growing: follow the reply only if the reader is at the bottom.
+  const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
+  if (!reply) {
+    // Created on the first word, so no empty bubble while waiting. The body is re-rendered; the button stays.
+    reply = addMessage('', 'claude', false);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy-reply';
+    button.textContent = 'Copy reply';
+    reply.append(document.createElement('div'), button);
+  }
+  const body = reply.firstElementChild as HTMLElement;
+  // shortcut: re-parses the whole reply each frame, quadratic for very long replies; stream-parse if that shows up
+  const raw = (rawText.get(reply) ?? '') + pending;
+  rawText.set(reply, raw);
+  body.innerHTML = renderMarkdown(raw, purify);
+  addCopyButtons(body);
+  pending = '';
+  if (stick) messages.scrollTop = messages.scrollHeight;
+}
+function dropReply(): void {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  pending = '';
+  reply = null;
+}
 pet.onReplyStart(() => setState('thinking'));
 pet.onReplyChunk((text) => {
-  reply ??= addMessage('', 'claude'); // created on the first word, so no empty bubble while waiting
-  reply.textContent += text;
-  messages.scrollTop = messages.scrollHeight;
+  pending += text;
+  frame ||= requestAnimationFrame(flush);
 });
 pet.onReplyEnd(() => {
+  flush();
   reply = null;
   setState('idle');
 });
 pet.onReplyError((message) => {
+  flush();
   reply = null;
   addMessage(message, 'claude');
   setState('error');
@@ -84,7 +140,7 @@ pet.onReplyError((message) => {
 // shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history
 function resetChat(id: string): void {
   chatId = id;
-  reply = null; // a reply cut off by New chat must not write into the new chat
+  dropReply(); // a reply cut off by New chat must not write into the new chat
   setState('idle');
   messages.replaceChildren();
   addMessage("Hi, I'm ClaudePet.", 'claude');

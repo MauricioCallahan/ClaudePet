@@ -18,6 +18,16 @@ test('FakeBridge streams the echo word by word', async () => {
 test('FakeBridge throws for /fail', async () => {
   await assert.rejects(collect(fast().send('c', '/fail now', new AbortController().signal)), /Fake bridge failure/);
 });
+test('FakeBridge streams a long reply for /long', async () => {
+  const chunks = await collect(fast().send('c', '/long', new AbortController().signal));
+  assert.equal(chunks.length, 150);
+  assert.ok(chunks.join('').includes('\n'));
+});
+test('FakeBridge replies with Markdown for /md', async () => {
+  const text = (await collect(fast().send('c', '/md', new AbortController().signal))).join('');
+  assert.match(text, /^# Heading\n/);
+  assert.match(text, /<script>/);
+});
 test('FakeBridge stops when aborted mid-stream', async () => {
   const ac = new AbortController();
   const bridge = new FakeBridge({ waitMs: () => 0, wordMs: 1000 });

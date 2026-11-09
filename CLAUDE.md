@@ -14,6 +14,13 @@
 - When the bullet is reviewed and all findings are resolved, push the branch and open a PR into `development` titled `M1-3: <bullet summary>`. I merge it with **Squash and merge**; do not merge it yourself.
 - At the end of a milestone, open a PR from `development` into `production` and tag the merge (e.g. `v0.1-m1`) after I merge it.
 
+### Testing
+- Unit tests use `node --test` (no Vitest). Use `jsdom` when code needs a DOM (e.g. DOMPurify).
+- Renderer logic lives in small, pure, testable modules (e.g. Markdown sanitizing, auto-scroll decision, code-block extraction, link filtering); `renderer.ts` only wires them to the DOM.
+- New non-trivial logic gets a unit test in the same commit as its task.
+- Each bullet adds one Playwright smoke spec that launches the real app with `_electron.launch` (FakeBridge, no real Claude) and checks the bullet's "done when" behavior. Run with `npm run e2e`.
+- No screenshot or visual tests for now. I still verify the UI by hand with `npm run dev`.
+
 ### Per task
 1. Plan the implementation first: files touched, approach, how to verify it.
 2. Implement only that task.
@@ -22,7 +29,7 @@
 5. Do NOT run /ponytail-review here. Go straight to the next task.
 
 ### After the bullet is complete (all 5 tasks committed)
-1. Run /ponytail-review once, over the combined diff of that bullet's branch
+1. Run `npm run e2e` (once it exists) and make sure it passes, then run /ponytail-review once, over the combined diff of that bullet's branch
    (`git diff development...HEAD`), and read every finding.
 2. **Must fix** (bug, security, data loss, crash): do not ask. Plan the fix,
    implement it, and commit it as `M1-3 review: <finding>`.

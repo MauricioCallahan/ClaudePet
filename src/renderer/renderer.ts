@@ -13,12 +13,13 @@ function setState(s: State): void {
 }
 
 // textContent, never innerHTML: replies in Milestone 2 are untrusted text.
-function addMessage(text: string, who: 'user' | 'claude'): void {
+function addMessage(text: string, who: 'user' | 'claude'): HTMLElement {
   const el = document.createElement('div');
   el.className = `msg ${who}`;
   el.textContent = text;
   messages.appendChild(el);
   messages.scrollTop = messages.scrollHeight;
+  return el;
 }
 
 form.addEventListener('submit', (e) => {
@@ -29,7 +30,7 @@ form.addEventListener('submit', (e) => {
   addMessage(text, 'user');
   pet.sendMessage(chatId, text);
   input.value = '';
-  setState('thinking'); // until replies arrive (4.2), nothing clears this but a new chat
+  setState('thinking'); // main answers with reply:start/chunk/end
 });
 
 // Enter sends, Shift+Enter inserts a newline.
@@ -49,7 +50,34 @@ declare const pet: {
   onOpenChat(cb: (id: string) => void): void;
   onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
+  stopReply(): void;
+  onReplyStart(cb: () => void): void;
+  onReplyChunk(cb: (text: string) => void): void;
+  onReplyEnd(cb: () => void): void;
+  onReplyError(cb: (message: string) => void): void;
 };
+
+// The reply bubble grows as chunks arrive.
+let reply: HTMLElement | null = null;
+pet.onReplyStart(() => {
+  setState('thinking');
+  reply = addMessage('', 'claude');
+});
+pet.onReplyChunk((text) => {
+  if (!reply) return;
+  reply.textContent += text;
+  messages.scrollTop = messages.scrollHeight;
+});
+pet.onReplyEnd(() => {
+  reply = null;
+  setState('idle');
+});
+pet.onReplyError((message) => {
+  reply?.remove();
+  reply = null;
+  addMessage(message, 'claude');
+  setState('error');
+});
 
 // shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history
 function resetChat(id: string): void {

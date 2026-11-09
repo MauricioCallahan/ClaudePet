@@ -1,4 +1,8 @@
+import DOMPurify from './vendor/purify.es.mjs';
+import { renderMarkdown } from './markdown.js';
 import { shouldStick } from './scroll.js';
+
+const purify = DOMPurify(window);
 
 const messages = document.getElementById('messages')!;
 const form = document.getElementById('form') as HTMLFormElement;
@@ -17,7 +21,7 @@ function setState(s: State): void {
   sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
 }
 
-// textContent, never innerHTML: replies in Milestone 2 are untrusted text.
+// User and error text goes in with textContent; Claude's replies are untrusted Markdown, rendered only through renderMarkdown (sanitized).
 function addMessage(text: string, who: 'user' | 'claude', scroll = true): HTMLElement {
   const el = document.createElement('div');
   el.className = `msg ${who}`;
@@ -67,6 +71,7 @@ declare const pet: {
 
 // The reply bubble grows as chunks arrive.
 let reply: HTMLElement | null = null;
+const rawText = new WeakMap<HTMLElement, string>(); // the Markdown source of each reply bubble
 let pending = ''; // chunks wait here so the DOM is written once per frame
 let frame = 0;
 function flush(): void {
@@ -76,7 +81,10 @@ function flush(): void {
   // Decide before growing: follow the reply only if the reader is at the bottom.
   const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
   reply ??= addMessage('', 'claude', false); // created on the first word, so no empty bubble while waiting
-  reply.textContent += pending;
+  // shortcut: re-parses the whole reply each frame, quadratic for very long replies; stream-parse if that shows up
+  const raw = (rawText.get(reply) ?? '') + pending;
+  rawText.set(reply, raw);
+  reply.innerHTML = renderMarkdown(raw, purify);
   pending = '';
   if (stick) messages.scrollTop = messages.scrollHeight;
 }

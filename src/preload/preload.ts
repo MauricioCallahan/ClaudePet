@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('pet', {
   onOpenChat: (cb: (id: string) => void): void => {
     ipcRenderer.on('chat:open', (_e, id: string) => cb(id));
   },
+  onFocusInput: (cb: () => void): void => {
+    ipcRenderer.on('chat:focus', () => cb());
+  },
   sendMessage: (chatId: string, text: string): void => {
     ipcRenderer.send('chat:message', chatId, text);
   },

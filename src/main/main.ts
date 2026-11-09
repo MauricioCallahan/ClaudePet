@@ -69,6 +69,7 @@ function createWindow(): void {
 function showWindow(): void {
   win?.show();
   win?.focus();
+  win?.webContents.send('chat:focus');
 }
 
 function showAndSend(channel: string, ...args: unknown[]): void {
@@ -111,7 +112,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Visible but behind another app: bring it forward instead of hiding it.
     globalShortcut.register('CommandOrControl+,', () => {
-      if (win?.isVisible() && !win.isFocused()) win.focus();
+      if (win?.isVisible() && !win.isFocused()) showWindow();
       else toggleWindow();
     });
   });

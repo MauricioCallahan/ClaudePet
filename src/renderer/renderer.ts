@@ -36,6 +36,7 @@ document.getElementById('close')!.addEventListener('click', () => window.close()
 declare const pet: {
   onNewChat(cb: () => void): void;
   onOpenChat(cb: (id: string) => void): void;
+  onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
 };
 
@@ -49,4 +50,5 @@ function resetChat(id: string): void {
 }
 pet.onNewChat(() => resetChat(crypto.randomUUID()));
 pet.onOpenChat(resetChat);
+pet.onFocusInput(() => input.focus());
 resetChat(chatId);

@@ -8,6 +8,7 @@ main { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: c
 .msg { max-width: 85%; padding: 6px 10px; border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .claude { align-self: flex-start; background: #f0f0f0; }
 .user { align-self: flex-end; background: #d9e8ff; }
+#thinking { padding: 0 12px 6px; color: #666; }
 form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #ddd; }
 textarea { flex: 1; resize: none; font: inherit; padding: 6px; }
 form button { padding: 0 12px; cursor: pointer; }

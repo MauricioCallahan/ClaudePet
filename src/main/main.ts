@@ -3,7 +3,7 @@ import path from 'node:path';
 import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
 import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
-import { createTray, destroyTray, refreshTray } from './tray';
+import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
@@ -111,10 +111,14 @@ if (!app.requestSingleInstanceLock()) {
       openChat: (id) => showAndSend('chat:open', id),
     });
     // Visible but behind another app: bring it forward instead of hiding it.
-    globalShortcut.register('CommandOrControl+,', () => {
+    const ok = globalShortcut.register('CommandOrControl+,', () => {
       if (win?.isVisible() && !win.isFocused()) showWindow();
       else toggleWindow();
     });
+    if (!ok) {
+      console.error('Could not register Ctrl+,: another app is using it');
+      notify('Hotkey unavailable', 'Ctrl+, is used by another app. Use the tray icon to open ClaudePet.');
+    }
   });
   // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
   app.on('before-quit', () => {

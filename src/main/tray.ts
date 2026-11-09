@@ -37,6 +37,10 @@ export function refreshTray(): void {
   );
 }
 
+export function notify(title: string, content: string): void {
+  tray?.displayBalloon({ title, content });
+}
+
 // Without this the icon can linger in the notification area after exit.
 export function destroyTray(): void {
   tray?.destroy();

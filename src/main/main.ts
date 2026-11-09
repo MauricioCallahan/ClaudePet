@@ -1,16 +1,25 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 import path from 'node:path';
+import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
 
 let win: BrowserWindow | null = null;
 
 function createWindow(): void {
+  const size = { width: 360, height: 480 };
   const { x, y } = loadSettings();
-  const hasPosition = typeof x === 'number' && typeof y === 'number';
+  const pos =
+    typeof x === 'number' && typeof y === 'number'
+      ? fitPosition(
+          { x, y },
+          size,
+          screen.getAllDisplays().map((d) => d.workArea),
+          screen.getPrimaryDisplay().workArea,
+        )
+      : {};
   win = new BrowserWindow({
-    ...(hasPosition ? { x, y } : {}),
-    width: 360,
-    height: 480,
+    ...pos,
+    ...size,
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,

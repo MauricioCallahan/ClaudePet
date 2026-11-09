@@ -20,7 +20,7 @@ test('FakeBridge throws for /fail', async () => {
 });
 test('FakeBridge streams a long reply for /long', async () => {
   const chunks = await collect(fast().send('c', '/long', new AbortController().signal));
-  assert.equal(chunks.length, 300);
+  assert.equal(chunks.length, 150);
   assert.ok(chunks.join('').includes('\n'));
 });
 test('FakeBridge replies with Markdown for /md', async () => {

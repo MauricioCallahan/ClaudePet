@@ -17,7 +17,7 @@ async function send(text: string): Promise<void> {
   await page.press('#input', 'Enter');
 }
 const idle = () => expect(page.locator('#send')).toHaveText('Send', { timeout: 30_000 });
-const scrollState = () => page.locator('#messages').evaluate((m) => ({ top: m.scrollTop, gap: m.scrollHeight - m.scrollTop - m.clientHeight }));
+const scrollState = () => page.locator('#messages').evaluate((m) => ({ overflow: m.scrollHeight > m.clientHeight, top: m.scrollTop, gap: m.scrollHeight - m.scrollTop - m.clientHeight }));
 
 test.beforeAll(async () => {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
@@ -32,10 +32,12 @@ test.afterAll(async () => {
 
 test('a long reply streams, follows the bottom, and stops following once you scroll up', async () => {
   await send('/long');
-  await expect(lastReply()).toContainText('word120', { timeout: 30_000 });
-  expect((await scrollState()).gap).toBeLessThan(30);
+  await expect(lastReply()).toContainText('word80', { timeout: 30_000 });
+  const before = await scrollState();
+  expect(before.overflow).toBe(true); // otherwise there is nothing to follow
+  expect(before.gap).toBeLessThan(30);
   await page.locator('#messages').evaluate((m) => (m.scrollTop = 0));
-  await expect(lastReply()).toContainText('word200', { timeout: 30_000 });
+  await expect(lastReply()).toContainText('word140', { timeout: 30_000 });
   expect((await scrollState()).top).toBeLessThan(30);
   await idle();
 });
@@ -60,6 +62,12 @@ test('Copy puts the exact code, and Copy reply the whole Markdown, on the clipbo
   expect(whole).toContain('```js');
 });
 
+test('messages show a time on hover', async () => {
+  await lastReply().hover();
+  expect(await lastReply().getAttribute('title')).toMatch(/\d{1,2}:\d{2}/);
+});
+
+// Last: Playwright waits on a cancelled navigation, so later actions on the page would hang.
 test('a link opens in the browser and the box does not navigate', async () => {
   await app.evaluate(({ shell }) => {
     const opened: string[] = [];
@@ -71,8 +79,4 @@ test('a link opens in the browser and the box does not navigate', async () => {
   await expect.poll(() => app.evaluate(() => (globalThis as any).__opened)).toEqual(['https://example.com/']);
   expect(page.url()).toBe(before);
   expect(await page.evaluate(() => document.querySelector('#messages h1')?.textContent)).toBe('Heading'); // the chat is still there
-});
-
-test('messages show a time on hover', async () => {
-  expect(await lastReply().getAttribute('title')).toMatch(/\d/);
 });

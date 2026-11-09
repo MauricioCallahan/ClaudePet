@@ -42,7 +42,7 @@ export class FakeBridge implements Bridge {
     // "/fail" exercises the error path without needing a real failure.
     if (text.startsWith('/fail')) throw new Error('Fake bridge failure (message started with /fail).');
     // "/long" streams a long reply so scrolling can be tried without a real answer.
-    const reply = text.startsWith('/md') ? MD_SAMPLE : text.startsWith('/long') ? Array.from({ length: 300 }, (_, i) => `word${i + 1}${i % 12 === 11 ? '\n' : ' '}`).join('') : text;
+    const reply = text.startsWith('/md') ? MD_SAMPLE : text.startsWith('/long') ? Array.from({ length: 150 }, (_, i) => `word${i + 1}${i % 12 === 11 ? '\n' : ' '}`).join('') : text;
     for (const word of reply.match(/\S+\s*/g) ?? []) {
       yield word;
       await sleep(this.wordMs, undefined, { signal });

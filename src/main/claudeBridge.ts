@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -58,6 +58,14 @@ export function parseLine(line: string): BridgeEvent | null {
   return null;
 }
 
+// child.kill() on Windows leaves grandchildren running (a .cmd shim starts node), so kill the whole tree.
+// Sync, so it has finished before the app exits on Quit.
+function killTree(child: ChildProcess): void {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+  else child.kill();
+}
+
 export interface ClaudeBridgeOptions {
   exe: () => string | undefined;
   cwd: string; // Claude Code keeps sessions per folder, so this must not change between runs
@@ -95,11 +103,12 @@ export class ClaudeBridge implements Bridge {
     child.stdin.on('error', () => {}); // the child may exit before reading its input
     // The prompt goes over stdin, never as an argument, so it cannot be read as a flag or shell syntax.
     child.stdin.end(text);
-    const onAbort = () => child.kill();
+    const onAbort = () => killTree(child);
     signal.addEventListener('abort', onAbort, { once: true });
     let error: string | undefined;
     try {
       for await (const line of readline.createInterface({ input: child.stdout })) {
+        if (signal.aborted) break; // lines already buffered must not keep streaming after Stop
         const ev = parseLine(line);
         if (ev?.error) error = ev.error;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
@@ -111,6 +120,7 @@ export class ClaudeBridge implements Bridge {
       if (code !== 0) throw new Error(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`);
     } finally {
       signal.removeEventListener('abort', onAbort);
+      killTree(child); // no-op after a normal exit; covers a caller that stops reading early
     }
   }
 }

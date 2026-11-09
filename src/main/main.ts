@@ -222,6 +222,7 @@ if (!app.requestSingleInstanceLock()) {
   // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
   app.on('before-quit', () => {
     isQuitting = true;
+    inflight?.abort(); // kills a running claude process so none outlives the app
     destroyTray();
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());

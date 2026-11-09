@@ -1,4 +1,5 @@
 import DOMPurify from './vendor/purify.es.mjs';
+import { addCopyButtons, codeToCopy } from './codeBlocks.js';
 import { renderMarkdown } from './markdown.js';
 import { shouldStick } from './scroll.js';
 
@@ -63,11 +64,22 @@ declare const pet: {
   onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
   stopReply(): void;
+  copyText(text: string): void;
   onReplyStart(cb: () => void): void;
   onReplyChunk(cb: (text: string) => void): void;
   onReplyEnd(cb: () => void): void;
   onReplyError(cb: (message: string) => void): void;
 };
+
+// One listener for every Copy button, including ones created by later renders.
+messages.addEventListener('click', (e) => {
+  const code = codeToCopy(e.target);
+  if (code === null) return;
+  pet.copyText(code);
+  const button = e.target as HTMLElement;
+  button.textContent = 'Copied';
+  setTimeout(() => (button.textContent = 'Copy'), 1500);
+});
 
 // The reply bubble grows as chunks arrive.
 let reply: HTMLElement | null = null;
@@ -85,6 +97,7 @@ function flush(): void {
   const raw = (rawText.get(reply) ?? '') + pending;
   rawText.set(reply, raw);
   reply.innerHTML = renderMarkdown(raw, purify);
+  addCopyButtons(reply);
   pending = '';
   if (stick) messages.scrollTop = messages.scrollHeight;
 }

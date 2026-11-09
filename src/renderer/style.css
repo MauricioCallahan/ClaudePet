@@ -14,9 +14,10 @@ main { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: c
 .claude p, .claude ul, .claude ol { margin: 0.4em 0; }
 .claude ul, .claude ol { padding-left: 1.4em; }
 .claude code { font-family: Consolas, monospace; background: #e2e2e2; padding: 0 3px; border-radius: 3px; }
-.claude pre { background: #e2e2e2; padding: 6px; border-radius: 6px; overflow-x: auto; }
+.claude pre { position: relative; background: #e2e2e2; padding: 6px; border-radius: 6px; overflow-x: auto; }
 .claude pre code { background: none; padding: 0; }
 #thinking { padding: 0 12px 6px; color: #666; }
 form { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #ddd; }
 textarea { flex: 1; resize: none; font: inherit; padding: 6px; }
 form button { padding: 0 12px; cursor: pointer; }
+.claude pre .copy { position: absolute; top: 4px; right: 4px; padding: 1px 6px; font-size: 12px; cursor: pointer; user-select: none; }

@@ -92,8 +92,7 @@ let hotkey = '';
 
 // Swap the global shortcut; the v0.2 settings panel only needs to call this and saveSettings.
 export function registerHotkey(accel: string): boolean {
-  if (hotkey) globalShortcut.unregister(hotkey);
-  hotkey = '';
+  if (accel === hotkey) return true;
   let ok = false;
   try {
     // Visible but behind another app: bring it forward instead of hiding it.
@@ -104,8 +103,11 @@ export function registerHotkey(accel: string): boolean {
   } catch {
     // register() throws on a malformed accelerator in settings.json
   }
-  if (ok) hotkey = accel;
-  else {
+  if (ok) {
+    // Only drop the old key once the new one works, so a failed change keeps the old hotkey.
+    if (hotkey) globalShortcut.unregister(hotkey);
+    hotkey = accel;
+  } else {
     console.error(`Could not register ${accel}: invalid or used by another app`);
     notify('Hotkey unavailable', `${accel} is invalid or used by another app. Use the tray icon to open ClaudePet.`);
   }
@@ -135,8 +137,8 @@ if (!app.requestSingleInstanceLock()) {
       recent: () => recent(chats),
       openChat: (id) => showAndSend('chat:open', id),
     });
-    const { hotkey } = loadSettings();
-    registerHotkey(typeof hotkey === 'string' && hotkey ? hotkey : DEFAULT_HOTKEY);
+    const { hotkey: saved } = loadSettings();
+    registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);
   });
   // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
   app.on('before-quit', () => {

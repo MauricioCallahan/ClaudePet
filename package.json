@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js",
     "dev": "npm run build && electron .",
-    "test": "npm run build && node --test dist/main/bounds.test.js"
+    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js"
   },
   "license": "MIT",
   "private": true,

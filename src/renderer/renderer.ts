@@ -30,4 +30,14 @@ input.addEventListener('keydown', (e) => {
 // The main process turns close into hide-to-tray.
 document.getElementById('close')!.addEventListener('click', () => window.close());
 
-addMessage("Hi, I'm ClaudePet.", 'claude');
+// Provided by the preload script.
+declare const pet: { onNewChat(cb: () => void): void };
+
+function newChat(): void {
+  messages.replaceChildren();
+  addMessage("Hi, I'm ClaudePet.", 'claude');
+  input.value = '';
+  input.focus();
+}
+pet.onNewChat(newChat);
+newChat();

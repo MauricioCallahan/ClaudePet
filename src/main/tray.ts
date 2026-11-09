@@ -4,6 +4,7 @@ import path from 'node:path';
 export interface TrayActions {
   toggle(): void;
   isVisible(): boolean;
+  newChat(): void;
 }
 
 // Module-level so the Tray is not garbage-collected (the icon would vanish).
@@ -13,7 +14,10 @@ let actions: TrayActions;
 // Rebuild whenever state the menu shows changes (window visibility, later the chat list).
 export function refreshTray(): void {
   tray?.setContextMenu(
-    Menu.buildFromTemplate([{ label: actions.isVisible() ? 'Hide' : 'Show', click: actions.toggle }]),
+    Menu.buildFromTemplate([
+      { label: actions.isVisible() ? 'Hide' : 'Show', click: actions.toggle },
+      { label: 'New chat', click: actions.newChat },
+    ]),
   );
 }
 

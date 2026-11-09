@@ -63,6 +63,13 @@ function createWindow(): void {
   w.on('hide', refreshTray);
 }
 
+function newChat(): void {
+  if (!win) return;
+  win.show();
+  win.focus();
+  win.webContents.send('chat:new');
+}
+
 // Shared by the tray and (Bullet 3) the global hotkey.
 export function toggleWindow(): void {
   if (!win) return;
@@ -81,7 +88,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => win?.focus());
   app.whenReady().then(() => {
     createWindow();
-    createTray({ toggle: toggleWindow, isVisible: () => !!win?.isVisible() });
+    createTray({ toggle: toggleWindow, isVisible: () => !!win?.isVisible(), newChat });
   });
   app.on('before-quit', () => (isQuitting = true));
 }

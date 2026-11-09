@@ -109,6 +109,7 @@ if (!app.requestSingleInstanceLock()) {
       recent: () => recent(chats),
       openChat: (id) => showAndSend('chat:open', id),
     });
+    globalShortcut.register('CommandOrControl+,', toggleWindow);
   });
   // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
   app.on('before-quit', () => {

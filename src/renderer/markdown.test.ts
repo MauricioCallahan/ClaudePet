@@ -28,3 +28,13 @@ test('removes javascript: links', () => {
   const html = renderMarkdown('[bad](javascript:alert(1))', purify);
   assert.doesNotMatch(html, /javascript:/);
 });
+
+test('removes form controls', () => {
+  const html = renderMarkdown('<form action="https://evil.example"><input name="pw"><button>Sign in</button></form>', purify);
+  assert.doesNotMatch(html, /form|input|button/);
+});
+
+test('removes class attributes so a reply cannot pose as our buttons', () => {
+  const html = renderMarkdown('<pre><code class="language-js">x</code><span class="copy">Install</span></pre>', purify);
+  assert.doesNotMatch(html, /class/);
+});

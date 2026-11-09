@@ -1,7 +1,7 @@
 const messages = document.getElementById('messages')!;
 const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
-let chatId = crypto.randomUUID();
+let chatId: string = crypto.randomUUID();
 
 // textContent, never innerHTML: replies in Milestone 2 are untrusted text.
 function addMessage(text: string, who: 'user' | 'claude'): void {

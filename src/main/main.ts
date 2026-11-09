@@ -1,7 +1,10 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
+import fs from 'node:fs';
+import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
+import { findClaude, readVersion } from './claudeBridge';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
@@ -159,6 +162,9 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', showWindow);
   app.whenReady().then(() => {
+    const claude = findClaude(process.env, fs.existsSync, os.homedir());
+    if (!claude) console.log('Claude Code: not installed');
+    else void readVersion(claude).then((v) => console.log(`Claude Code: ${claude} (${v ?? 'unknown version'})`));
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {

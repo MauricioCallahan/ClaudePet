@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/vendor.js && tsc && tsc -p tsconfig.renderer.json && node scripts/copy-assets.js",
     "dev": "npm run build && electron .",
-    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js dist/main/chats.test.js dist/main/bridge.test.js dist/main/links.test.js dist/renderer/scroll.test.js dist/renderer/markdown.test.js dist/renderer/codeBlocks.test.js",
+    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js dist/main/chats.test.js dist/main/bridge.test.js dist/main/claudeBridge.test.js dist/main/links.test.js dist/renderer/scroll.test.js dist/renderer/markdown.test.js dist/renderer/codeBlocks.test.js",
     "e2e": "npm run build && playwright test"
   },
   "license": "MIT",

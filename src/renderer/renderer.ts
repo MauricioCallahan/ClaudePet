@@ -10,7 +10,8 @@ type State = 'idle' | 'thinking' | 'error';
 let state: State = 'idle';
 function setState(s: State): void {
   state = s;
-  thinking.hidden = s !== 'thinking';
+  // Stays in the page and only its text changes: screen readers announce text changes in a live region, not unhiding.
+  thinking.textContent = s === 'thinking' ? 'thinking…' : '';
   sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
 }
 
@@ -64,12 +65,9 @@ declare const pet: {
 
 // The reply bubble grows as chunks arrive.
 let reply: HTMLElement | null = null;
-pet.onReplyStart(() => {
-  setState('thinking');
-  reply = addMessage('', 'claude');
-});
+pet.onReplyStart(() => setState('thinking'));
 pet.onReplyChunk((text) => {
-  if (!reply) return;
+  reply ??= addMessage('', 'claude'); // created on the first word, so no empty bubble while waiting
   reply.textContent += text;
   messages.scrollTop = messages.scrollHeight;
 });
@@ -78,7 +76,6 @@ pet.onReplyEnd(() => {
   setState('idle');
 });
 pet.onReplyError((message) => {
-  reply?.remove();
   reply = null;
   addMessage(message, 'claude');
   setState('error');

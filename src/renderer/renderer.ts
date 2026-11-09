@@ -27,7 +27,7 @@ input.addEventListener('keydown', (e) => {
   }
 });
 
-// shortcut: close quits the app; becomes hide-to-tray in task 2.1
+// The main process turns close into hide-to-tray.
 document.getElementById('close')!.addEventListener('click', () => window.close());
 
 addMessage("Hi, I'm ClaudePet.", 'claude');

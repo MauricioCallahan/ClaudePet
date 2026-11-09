@@ -2,8 +2,10 @@ import { app, BrowserWindow, screen } from 'electron';
 import path from 'node:path';
 import { fitPosition } from './bounds';
 import { loadSettings, saveSettings } from './settings';
+import { createTray } from './tray';
 
 let win: BrowserWindow | null = null;
+let isQuitting = false;
 
 function createWindow(): void {
   const size = { width: 360, height: 480 };
@@ -44,7 +46,13 @@ function createWindow(): void {
     clearTimeout(timer);
     timer = setTimeout(save, 300);
   });
-  w.on('close', () => {
+  w.on('close', (e) => {
+    // × hides to the tray; only a real quit lets the window close.
+    if (!isQuitting) {
+      e.preventDefault();
+      w.hide();
+      return;
+    }
     if (timer) {
       clearTimeout(timer);
       save();
@@ -58,7 +66,9 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => win?.focus());
-  app.whenReady().then(createWindow);
-  // shortcut: quit on close, replace with hide-to-tray in task 2.1
-  app.on('window-all-closed', () => app.quit());
+  app.whenReady().then(() => {
+    createWindow();
+    createTray();
+  });
+  app.on('before-quit', () => (isQuitting = true));
 }

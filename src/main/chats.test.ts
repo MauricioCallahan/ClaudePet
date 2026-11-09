@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeTitle, parseChats, recent, upsert } from './chats';
+import { makeTitle, parseChats, recent, setSession, upsert } from './chats';
 
 test('parseChats keeps valid entries and drops malformed ones', () => {
   const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 1 }, { id: 2 }, null, 'x']);
@@ -21,6 +21,17 @@ test('upsert keeps the first title and moves the chat to the front', () => {
     { id: 'a', title: 'first', updatedAt: 3 },
     { id: 'b', title: 'other', updatedAt: 2 },
   ]);
+});
+test('setSession stores the session id and upsert keeps it', () => {
+  let c = upsert([], 'a', 'first', 1);
+  c = setSession(c, 'a', 's1');
+  c = setSession(c, 'missing', 's2');
+  c = upsert(c, 'a', 'again', 2);
+  assert.deepEqual(c, [{ id: 'a', title: 'first', updatedAt: 2, sessionId: 's1' }]);
+});
+test('parseChats drops a chat whose sessionId is not a string', () => {
+  const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 1, sessionId: 5 }, { id: 'b', title: 't', updatedAt: 1, sessionId: 's' }]);
+  assert.deepEqual(parseChats(text).map((c) => c.id), ['b']);
 });
 test('recent sorts newest first and limits', () => {
   const c = Array.from({ length: 12 }, (_, i) => ({ id: String(i), title: '', updatedAt: i }));

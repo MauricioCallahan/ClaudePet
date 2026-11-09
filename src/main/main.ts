@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
+import { loadChats, recent, saveChats, setSession, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -103,7 +103,18 @@ const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
     ? new FakeBridge()
-    : new ClaudeBridge({ exe: claudePath, cwd: path.join(app.getPath('userData'), 'workspace') });
+    : new ClaudeBridge({
+        exe: claudePath,
+        cwd: path.join(app.getPath('userData'), 'workspace'),
+        sessions: {
+          get: (id) => chats.find((c) => c.id === id)?.sessionId,
+          set: (id, sessionId) => {
+            if (chats.find((c) => c.id === id)?.sessionId === sessionId) return; // every reply repeats it
+            chats = setSession(chats, id, sessionId);
+            saveChats(chats);
+          },
+        },
+      });
 let inflight: AbortController | null = null;
 
 // Streams one reply to the renderer as reply:start, reply:chunk..., then reply:end or reply:error.

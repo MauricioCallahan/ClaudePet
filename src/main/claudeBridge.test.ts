@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { command, findClaude, parseLine } from './claudeBridge';
+import { buildArgs, command, findClaude, parseLine } from './claudeBridge';
+
+test('buildArgs resumes only with a well-formed session id', () => {
+  const id = '730602b1-d89c-41bf-9f2d-54bc04302aef';
+  assert.deepEqual(buildArgs(id).slice(-2), ['--resume', id]);
+  for (const bad of [undefined, '', 'abc', `${id} & calc`, '--dangerously-skip-permissions']) assert.ok(!buildArgs(bad).includes('--resume'));
+});
 
 const only = (...files: string[]) => (f: string) => files.includes(f);
 const home = path.join('home', 'me');

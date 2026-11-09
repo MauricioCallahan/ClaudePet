@@ -61,19 +61,28 @@ export function parseLine(line: string): BridgeEvent | null {
 export interface ClaudeBridgeOptions {
   exe: () => string | undefined;
   cwd: string; // Claude Code keeps sessions per folder, so this must not change between runs
+  sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string): void };
+}
+
+// The session id becomes a command-line argument, so only a plain UUID is ever passed on.
+const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+export function buildArgs(sessionId?: string): string[] {
+  // --verbose is required for stream-json in print mode; partial messages give text as it is written.
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+  return sessionId && UUID.test(sessionId) ? [...args, '--resume', sessionId] : args;
 }
 
 // Runs the claude CLI once per message and streams its reply.
 export class ClaudeBridge implements Bridge {
   constructor(private opts: ClaudeBridgeOptions) {}
 
-  async *send(_chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string> {
+  async *send(chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string> {
     signal.throwIfAborted();
     const exe = this.opts.exe();
     if (!exe) throw new Error('Claude Code is not installed.');
     const { file, shell } = command(exe);
-    // --verbose is required for stream-json in print mode; partial messages give text as it is written.
-    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+    const args = buildArgs(this.opts.sessions.get(chatId));
     fs.mkdirSync(this.opts.cwd, { recursive: true });
     const child = spawn(file, args, { cwd: this.opts.cwd, shell, windowsHide: true });
     let stderr = '';
@@ -93,6 +102,7 @@ export class ClaudeBridge implements Bridge {
       for await (const line of readline.createInterface({ input: child.stdout })) {
         const ev = parseLine(line);
         if (ev?.error) error = ev.error;
+        if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
         if (ev?.chunk) yield ev.chunk;
       }
       const code = await exit;

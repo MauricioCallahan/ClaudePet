@@ -1,10 +1,14 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
+import { loadSettings, saveSettings } from './settings';
 
 let win: BrowserWindow | null = null;
 
 function createWindow(): void {
+  const { x, y } = loadSettings();
+  const hasPosition = typeof x === 'number' && typeof y === 'number';
   win = new BrowserWindow({
+    ...(hasPosition ? { x, y } : {}),
     width: 360,
     height: 480,
     frame: false,
@@ -19,7 +23,25 @@ function createWindow(): void {
     },
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
-  win.on('closed', () => (win = null));
+
+  // Save the position once a drag settles, not on every pixel.
+  const w = win;
+  let timer: NodeJS.Timeout | undefined;
+  const save = () => {
+    const [px, py] = w.getPosition();
+    saveSettings({ x: px, y: py });
+  };
+  w.on('moved', () => {
+    clearTimeout(timer);
+    timer = setTimeout(save, 300);
+  });
+  w.on('close', () => {
+    if (timer) {
+      clearTimeout(timer);
+      save();
+    }
+  });
+  w.on('closed', () => (win = null));
 }
 
 // Only one pet at a time: a second launch focuses the first.

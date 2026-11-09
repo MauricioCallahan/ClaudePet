@@ -7,6 +7,7 @@ import { createTray, destroyTray, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
 let isQuitting = false;
+const MAX_MESSAGE_LENGTH = 10_000;
 
 function createWindow(): void {
   const size = { width: 360, height: 480 };
@@ -96,7 +97,8 @@ if (!app.requestSingleInstanceLock()) {
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
-      if (typeof id !== 'string' || typeof text !== 'string' || id.length > 100) return;
+      if (typeof id !== 'string' || typeof text !== 'string') return;
+      if (id.length > 100 || text.length > MAX_MESSAGE_LENGTH) return;
       chats = upsert(chats, id, text, Date.now());
       saveChats(chats);
       refreshTray();

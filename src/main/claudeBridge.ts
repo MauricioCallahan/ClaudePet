@@ -192,8 +192,8 @@ export class ClaudeBridge implements Bridge {
       }
       const code = await exit;
       signal.throwIfAborted();
-      if (stopped === 'network') throw new BridgeError(describe('network', `no response after ${offline} retries`));
-      if (stopped === 'timeout') throw new BridgeError(describe('timeout', `no output for ${this.opts.idleMs} ms`));
+      if (stopped === 'network') throw new BridgeError(describe('network', ''), `no response after ${offline} retries`);
+      if (stopped === 'timeout') throw new BridgeError(describe('timeout', ''), `no output for ${this.opts.idleMs} ms`);
       if (error) throw toBridgeError(error, code, resetsAt);
       if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code, resetsAt);
     } finally {

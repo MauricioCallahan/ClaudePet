@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, describe, INSTALL_URL, toBridgeError } from './errors';
+import { classify, describe, INSTALL_URL, logLine, toBridgeError } from './errors';
 import { isWebUrl } from './links';
 
 // Sample texts as Claude Code 2.1.321 and Windows report them.
@@ -60,4 +60,17 @@ test('describe: network and timeout errors offer Retry; the others do not', () =
   assert.equal(describe('network', '').retry, true);
   assert.equal(describe('timeout', '').retry, true);
   for (const c of ['not-installed', 'not-signed-in', 'usage-limit', 'unknown'] as const) assert.equal(describe(c, 'x').retry, undefined, c);
+});
+test('logLine: time, case, exit code and the error text on one line, cut to 300 characters', () => {
+  const at = new Date(Date.UTC(2026, 10, 9, 12, 0, 0));
+  assert.equal(logLine(at, 'not-signed-in', 1, 'Not logged in ·\r\n  Please run /login'), '2026-11-09T12:00:00.000Z not-signed-in exit=1 Not logged in · Please run /login\n');
+  assert.equal(logLine(at, 'timeout', undefined, ''), '2026-11-09T12:00:00.000Z timeout\n');
+  const long = logLine(at, 'unknown', null, 'x'.repeat(1000));
+  assert.equal(long.split('\n').length, 2);
+  assert.ok(long.includes('x'.repeat(300)) && !long.includes('x'.repeat(301)));
+});
+test('toBridgeError keeps the detail and exit code for the log', () => {
+  const e = toBridgeError('Not logged in · Please run /login', 1);
+  assert.equal(e.detail, 'Not logged in · Please run /login');
+  assert.equal(e.code, 1);
 });

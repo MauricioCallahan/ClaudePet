@@ -1,4 +1,5 @@
 // Stands in for the claude CLI in e2e tests: reads the prompt from stdin and prints stream-json lines.
+const fs = require('node:fs');
 const args = process.argv.slice(2);
 const resume = args.includes('--resume') ? args[args.indexOf('--resume') + 1] : undefined;
 const session_id = resume ?? '11111111-2222-4333-8444-555555555555';
@@ -23,6 +24,23 @@ process.stdin.on('end', () => {
   if (prompt.startsWith('/deny')) {
     say('I need to run a command.');
     out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: 'Bash' }] });
+    return;
+  }
+  // Error output in the shapes claude 2.1.321 prints; a real error run exits with 1.
+  const fail = (result) => {
+    out({ type: 'result', subtype: 'success', is_error: true, result, session_id });
+    process.exitCode = 1;
+  };
+  if (prompt.startsWith('/signedout')) return fail('Not logged in · Please run /login');
+  if (prompt.startsWith('/limit')) {
+    const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+    out({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', resetsAt, rateLimitType: 'five_hour' }, session_id });
+    return fail("You've hit your limit · resets 5pm");
+  }
+  // Offline while the FAKE_OFFLINE_FILE exists: retries that get no response, forever, like claude without network.
+  if (prompt.startsWith('/offline') && process.env.FAKE_OFFLINE_FILE && fs.existsSync(process.env.FAKE_OFFLINE_FILE)) {
+    for (let attempt = 1; attempt <= 3; attempt++) out({ type: 'system', subtype: 'api_retry', attempt, max_retries: 10, retry_delay_ms: 500, error_status: null, error: 'unknown', session_id });
+    setInterval(() => {}, 1000);
     return;
   }
   if (prompt.startsWith('/fail')) {

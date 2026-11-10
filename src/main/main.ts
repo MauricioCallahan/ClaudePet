@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
 import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
-import { BridgeError, type ReplyError } from './errors';
+import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
@@ -132,6 +132,15 @@ const bridge: Bridge =
       });
 let inflight: AbortController | null = null;
 
+// shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
+function logError(e: BridgeError): void {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'bridge.log'), logLine(new Date(), e.info.case, e.code, e.detail));
+  } catch {
+    // a log that cannot be written must never break the reply
+  }
+}
+
 // Streams one reply to the renderer as reply:start, reply:chunk..., then reply:end or reply:error.
 async function runReply(id: string, text: string): Promise<void> {
   const ac = new AbortController();
@@ -145,7 +154,11 @@ async function runReply(id: string, text: string): Promise<void> {
   } catch (err) {
     // Stop and New chat abort on purpose: that is an ordinary end, not an error.
     if (ac.signal.aborted) send('reply:end');
-    else send('reply:error', err instanceof BridgeError ? err.info : ({ case: 'unknown', message: err instanceof Error ? err.message : String(err) } satisfies ReplyError));
+    else {
+      const e = err instanceof BridgeError ? err : new BridgeError({ case: 'unknown', message: err instanceof Error ? err.message : String(err) });
+      send('reply:error', e.info);
+      logError(e);
+    }
   } finally {
     inflight = null;
     refreshTray();

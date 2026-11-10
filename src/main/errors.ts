@@ -47,12 +47,23 @@ export function describe(c: ErrorCase, detail: string, resetsAt?: number): Reply
   }
 }
 
+// detail and code are what Claude Code reported, kept for the log.
 export class BridgeError extends Error {
-  constructor(readonly info: ReplyError) {
+  constructor(
+    readonly info: ReplyError,
+    readonly detail = info.message,
+    readonly code?: number | null,
+  ) {
     super(info.message);
   }
 }
 
 // A rejected rate_limit_event (resetsAt set) means the limit, whatever the error text says.
 export const toBridgeError = (detail: string, code?: number | null, resetsAt?: number) =>
-  new BridgeError(describe(resetsAt === undefined ? classify(detail, code) : 'usage-limit', detail, resetsAt));
+  new BridgeError(describe(resetsAt === undefined ? classify(detail, code) : 'usage-limit', detail, resetsAt), detail, code);
+
+// One line per failed reply. Only Claude Code's error text goes in, never a message or a reply.
+export function logLine(at: Date, c: ErrorCase, code: number | null | undefined, detail: string): string {
+  const text = detail.replace(/\s+/g, ' ').trim().slice(0, 300);
+  return `${at.toISOString()} ${c}${code == null ? '' : ` exit=${code}`}${text ? ` ${text}` : ''}\n`;
+}

@@ -88,6 +88,19 @@ export function setSession(chats: Chat[], id: string, sessionId: string): Chat[]
   return chats.map((c) => (c.id === id ? { ...c, sessionId } : c));
 }
 
+// An empty title (only spaces) keeps the old one.
+export function rename(chats: Chat[], id: string, title: string): Chat[] {
+  const t = title.replace(/\s+/g, ' ').trim().slice(0, 100);
+  return t ? chats.map((c) => (c.id === id ? { ...c, title: t } : c)) : chats;
+}
+
+// Where Claude Code keeps a session's transcript: its folder name is the cwd with every
+// non-alphanumeric character turned into '-' (checked against claude 2.1). Only a uuid may name a file.
+export function transcriptPath(configDir: string, cwd: string, sessionId: string): string | undefined {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return undefined;
+  return path.join(configDir, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${sessionId}.jsonl`);
+}
+
 export function recent(chats: Chat[], n = 10): Chat[] {
   return [...chats].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, n);
 }
@@ -124,5 +137,6 @@ function writeAtomic(target: string, data: unknown): void {
   }
 }
 
+export const deleteMessages = (id: string): void => fs.rmSync(messagesFile(id), { force: true });
 export const saveChats = (chats: Chat[]): void => writeAtomic(file(), chats);
 export const saveMessages = (id: string, msgs: Message[]): void => writeAtomic(messagesFile(id), msgs);

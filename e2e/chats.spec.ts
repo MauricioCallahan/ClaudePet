@@ -83,3 +83,36 @@ test('search narrows the list by message text, not just the title', async () => 
   await page.fill('#search', '');
   await expect(rows()).toHaveCount(2);
 });
+
+test('rename and delete update the list, the store and Claude Code transcript', async () => {
+  const row = (title: string) => page.locator('#chat-list li', { hasText: title });
+  await row('hello pancake').locator('button.rename').click();
+  await page.fill('.rename-field', 'Pancakes');
+  await page.press('.rename-field', 'Enter');
+  await expect(rows()).toHaveText(['Pancakes', 'second chat']);
+  expect(readJson('chats.json').map((c: { title: string }) => c.title)).toEqual(['Pancakes', 'second chat']);
+
+  await row('second chat').locator('button.rename').click();
+  await page.fill('.rename-field', 'never saved');
+  await page.press('.rename-field', 'Escape'); // cancels the rename and keeps the list open
+  await expect(rows()).toHaveText(['Pancakes', 'second chat']);
+
+  const [chat] = readJson('chats.json');
+  const transcript = path.join(profile, 'claude', 'projects', path.join(profile, 'workspace').replace(/[^a-zA-Z0-9]/g, '-'), `${chat.sessionId}.jsonl`);
+  fs.mkdirSync(path.dirname(transcript), { recursive: true });
+  fs.writeFileSync(transcript, '{}\n');
+  await row('Pancakes').locator('button.delete').click();
+  await page.click('#chat-list button.no');
+  await expect(rows()).toHaveCount(2);
+  await row('Pancakes').locator('button.delete').click();
+  await page.click('#chat-list button.yes');
+
+  // It was the open chat, so the box starts a new one.
+  await expect(page.locator('#chats')).toBeHidden();
+  await expect(page.locator('#messages .msg')).toHaveText(["Hi, I'm ClaudePet."]);
+  expect(readJson('chats.json').map((c: { title: string }) => c.title)).toEqual(['second chat']);
+  expect(fs.existsSync(path.join(profile, 'chats', `${chat.id}.json`))).toBe(false);
+  expect(fs.existsSync(transcript)).toBe(false);
+  await page.click('#chats-button');
+  await expect(rows()).toHaveText(['second chat']);
+});

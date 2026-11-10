@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addUser, isChatId, makeTitle, matches, parseChats, parseMessages, recent, setSession, upsert } from './chats';
+import path from 'node:path';
+import { addUser, isChatId, makeTitle, matches, parseChats, parseMessages, recent, rename, setSession, transcriptPath, upsert } from './chats';
 
 test('parseChats keeps valid entries and drops malformed ones', () => {
   const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 1 }, { id: 2 }, null, 'x']);
@@ -75,4 +76,18 @@ test('matches finds a word in the title or any message, ignoring case', () => {
   for (const q of ['lisbon', 'RAINCOAT', ' trip ', '', '  ']) assert.ok(matches(chat, msgs, q), q);
   assert.equal(matches(chat, msgs, 'paris'), false);
   assert.equal(matches(chat, [], 'raincoat'), false);
+});
+test('rename trims the title and ignores an empty one', () => {
+  const c = [{ id: 'a', title: 'old', updatedAt: 1 }];
+  assert.equal(rename(c, 'a', '  new\n title ')[0].title, 'new title');
+  assert.equal(rename(c, 'a', '   ')[0].title, 'old');
+  assert.equal(rename(c, 'a', 'x'.repeat(150))[0].title.length, 100);
+});
+test('transcriptPath names the file Claude Code writes, and only for a uuid', () => {
+  const s = '0c42d79a-5eee-4841-845f-2cb52763161c';
+  assert.equal(
+    transcriptPath('C:\\Users\\me\\.claude', 'C:\\Users\\me\\AppData\\Roaming\\claudepet\\workspace', s),
+    path.join('C:\\Users\\me\\.claude', 'projects', 'C--Users-me-AppData-Roaming-claudepet-workspace', `${s}.jsonl`),
+  );
+  for (const bad of ['', '../../x', `${s}/../x`, 'not-a-uuid']) assert.equal(transcriptPath('c', 'w', bad), undefined, bad);
 });

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { addUser, isChatId, loadChats, loadMessages, matches, readMessages, recent, saveChats, saveMessages, setSession, upsert, type Chat } from './chats';
+import { addUser, deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -99,6 +99,7 @@ function showAndSend(channel: string, ...args: unknown[]): void {
 
 let chats: Chat[] = [];
 
+const workspace = path.join(app.getPath('userData'), 'workspace'); // the cwd of every claude process
 const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
@@ -106,7 +107,7 @@ const bridge: Bridge =
     ? new FakeBridge()
     : new ClaudeBridge({
         exe: claudePath,
-        cwd: path.join(app.getPath('userData'), 'workspace'),
+        cwd: workspace,
         sessions: {
           get: (id) => chats.find((c) => c.id === id)?.sessionId,
           set: (id, sessionId) => {
@@ -131,6 +132,7 @@ const bridge: Bridge =
         idleMs: Number(process.env.CLAUDEPET_IDLE_MS) || 15 * 60_000,
       });
 let inflight: AbortController | null = null;
+let replyChat = ''; // the chat the running reply belongs to
 let running: Promise<void> = Promise.resolve(); // the current runReply, so a reopen can wait for its save
 
 // shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
@@ -146,6 +148,7 @@ function logError(e: BridgeError): void {
 async function runReply(id: string, text: string): Promise<void> {
   const ac = new AbortController();
   inflight = ac;
+  replyChat = id;
   refreshTray();
   const send = (channel: string, ...args: unknown[]) => win?.webContents.send(channel, ...args);
   send('reply:start');
@@ -178,6 +181,28 @@ async function openChat(id: string): Promise<void> {
   inflight?.abort();
   await running;
   showAndSend('chat:open', id);
+}
+
+// Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
+async function deleteChat(id: string): Promise<void> {
+  if (inflight && replyChat === id) inflight.abort();
+  await running; // its save must not bring the messages back
+  const chat = chats.find((c) => c.id === id);
+  if (!chat) return;
+  chats = chats.filter((c) => c !== chat);
+  saveChats(chats);
+  refreshTray();
+  win?.webContents.send('chat:deleted', id);
+  try {
+    deleteMessages(id);
+    const transcript = chat.sessionId && transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, chat.sessionId);
+    if (transcript) {
+      fs.rmSync(transcript, { force: true });
+      fs.rmSync(transcript.slice(0, -'.jsonl'.length), { recursive: true, force: true }); // the session's side folder, if any
+    }
+  } catch (err) {
+    console.error(`Could not delete the files of chat ${id}:`, err);
+  }
 }
 
 // Shared by the tray and (Bullet 3) the global hotkey.
@@ -247,6 +272,15 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('chat:stop', () => inflight?.abort());
     ipcMain.on('chat:open', (_e, id: unknown) => {
       if (isChatId(id)) void openChat(id);
+    });
+    ipcMain.on('chat:rename', (_e, id: unknown, title: unknown) => {
+      if (!isChatId(id) || typeof title !== 'string') return;
+      chats = rename(chats, id, title);
+      saveChats(chats);
+      refreshTray();
+    });
+    ipcMain.on('chat:delete', (_e, id: unknown) => {
+      if (isChatId(id)) void deleteChat(id);
     });
     ipcMain.handle('chat:load', (_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
     ipcMain.handle('chats:list', async (_e, query: unknown) => {

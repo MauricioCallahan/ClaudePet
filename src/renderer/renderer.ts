@@ -91,6 +91,9 @@ declare const pet: {
   listChats(query?: string): Promise<ChatSummary[]>;
   openChat(id: string): void;
   loadChat(id: string): Promise<Message[]>;
+  renameChat(id: string, title: string): void;
+  deleteChat(id: string): void;
+  onChatDeleted(cb: (id: string) => void): void;
   stopReply(): void;
   copyText(text: string): void;
   onReplyStart(cb: () => void): void;
@@ -207,6 +210,8 @@ async function renderList(): Promise<void> {
   if (ask !== listed) return;
   const rows = found.map((c) => {
     const li = document.createElement('li');
+    li.dataset.id = c.id;
+    li.dataset.title = c.title;
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'open';
@@ -218,7 +223,7 @@ async function renderList(): Promise<void> {
     time.dateTime = new Date(c.updatedAt).toISOString();
     time.textContent = new Date(c.updatedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
     row.append(title, time);
-    li.append(row);
+    li.append(row, button('rename', '✎', 'Rename'), button('delete', '🗑', 'Delete'));
     return li;
   });
   if (!rows.length) {
@@ -235,9 +240,44 @@ search.addEventListener('input', () => {
   searchTimer = window.setTimeout(() => void renderList(), 150); // one search per pause in typing, not per key
 });
 // Opening goes through main, the same path as the tray's Recent chats.
+function button(className: string, text: string, label = text): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.textContent = text;
+  b.setAttribute('aria-label', label);
+  return b;
+}
+// Rename and delete swap the row's content in place; any re-render puts the normal row back.
 chatList.addEventListener('click', (e) => {
-  const row = (e.target as HTMLElement).closest<HTMLElement>('button.open');
-  if (row?.dataset.id) pet.openChat(row.dataset.id);
+  const action = (e.target as HTMLElement).closest('button')?.className;
+  const li = (e.target as HTMLElement).closest('li');
+  const id = li?.dataset.id;
+  if (!li || !id) return;
+  if (action === 'open') pet.openChat(id);
+  else if (action === 'rename') {
+    const field = document.createElement('input');
+    field.className = 'rename-field';
+    field.value = li.dataset.title ?? '';
+    field.setAttribute('aria-label', 'New title');
+    li.replaceChildren(field);
+    field.select();
+  } else if (action === 'delete') {
+    const ask = document.createElement('span');
+    ask.textContent = 'Delete this chat?';
+    const no = button('no', 'No');
+    li.replaceChildren(ask, button('yes', 'Yes'), no);
+    no.focus(); // the safe answer is the default
+  } else if (action === 'yes') pet.deleteChat(id); // main answers with chat:deleted
+  else if (action === 'no') void renderList();
+});
+chatList.addEventListener('keydown', (e) => {
+  const field = e.target as HTMLInputElement;
+  if (!field.classList.contains('rename-field')) return;
+  if (e.key === 'Enter') pet.renameChat(field.closest('li')!.dataset.id!, field.value);
+  if (e.key !== 'Enter' && e.key !== 'Escape') return;
+  e.stopPropagation(); // Esc cancels the rename, not the whole list
+  void renderList();
 });
 chatsButton.addEventListener('click', () => void showList(chatsButton.getAttribute('aria-expanded') !== 'true'));
 chatsPanel.addEventListener('keydown', (e) => {
@@ -262,4 +302,8 @@ function resetChat(id: string, history: Message[] = []): void {
 pet.onNewChat(() => resetChat(crypto.randomUUID()));
 pet.onOpenChat(async (id) => resetChat(id, await pet.loadChat(id)));
 pet.onFocusInput(() => input.focus());
+pet.onChatDeleted((id) => {
+  if (id === chatId) resetChat(crypto.randomUUID());
+  else if (!chatsPanel.hidden) void renderList();
+});
 resetChat(chatId);

@@ -27,12 +27,17 @@ export interface ReplyError {
 export const INSTALL_URL = 'https://claude.com/claude-code';
 
 // Known cases get the fix in plain words; unknown keeps Claude Code's own text, the only clue there is.
-export function describe(c: ErrorCase, detail: string): ReplyError {
+// resetsAt: unix seconds, from Claude Code's rate_limit_event.
+export function describe(c: ErrorCase, detail: string, resetsAt?: number): ReplyError {
   switch (c) {
     case 'not-installed':
       return { case: c, message: "Claude Code isn't installed. Install it, then try again:", link: INSTALL_URL };
     case 'not-signed-in':
       return { case: c, message: "You're not signed in to Claude Code. Run `claude` once in a terminal and sign in, then try again." };
+    case 'usage-limit': {
+      const when = resetsAt && new Date(resetsAt * 1000).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+      return { case: c, message: `You've reached your Claude usage limit. ${when ? `It resets ${when}.` : 'Try again later.'}` };
+    }
     default:
       return { case: c, message: detail };
   }
@@ -44,4 +49,6 @@ export class BridgeError extends Error {
   }
 }
 
-export const toBridgeError = (detail: string, code?: number | null) => new BridgeError(describe(classify(detail, code), detail));
+// A rejected rate_limit_event (resetsAt set) means the limit, whatever the error text says.
+export const toBridgeError = (detail: string, code?: number | null, resetsAt?: number) =>
+  new BridgeError(describe(resetsAt === undefined ? classify(detail, code) : 'usage-limit', detail, resetsAt));

@@ -41,6 +41,7 @@ export interface BridgeEvent {
   chunk?: string;
   sessionId?: string;
   error?: string;
+  resetsAt?: number; // the usage limit was hit; unix seconds when it resets
 }
 
 // One line of `claude -p --output-format stream-json`. Anything we do not need, or cannot parse, is null.
@@ -57,6 +58,10 @@ export function parseLine(line: string): BridgeEvent | null {
   if (v.type === 'stream_event') {
     const d = v.event?.delta;
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
+  }
+  if (v.type === 'rate_limit_event') {
+    const info = v.rate_limit_info;
+    return info?.status === 'rejected' && typeof info.resetsAt === 'number' ? { resetsAt: info.resetsAt } : null;
   }
   if (v.type === 'result') {
     // Reported as a success, but a denied tool means the reply is not what was asked for.
@@ -156,18 +161,20 @@ export class ClaudeBridge implements Bridge {
     const onAbort = () => killTree(child);
     signal.addEventListener('abort', onAbort, { once: true });
     let error: string | undefined;
+    let resetsAt: number | undefined;
     try {
       for await (const line of readline.createInterface({ input: child.stdout })) {
         if (signal.aborted) break; // lines already buffered must not keep streaming after Stop
         const ev = parseLine(line);
         if (ev?.error) error = ev.error;
+        if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
         if (ev?.chunk) yield ev.chunk;
       }
       const code = await exit;
       signal.throwIfAborted();
-      if (error) throw toBridgeError(error, code);
-      if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code);
+      if (error) throw toBridgeError(error, code, resetsAt);
+      if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code, resetsAt);
     } finally {
       signal.removeEventListener('abort', onAbort);
       killTree(child); // no-op after a normal exit; covers a caller that stops reading early

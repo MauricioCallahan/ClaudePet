@@ -114,3 +114,10 @@ test('parseLine: lines that are not reply text are ignored', () => {
   ];
   for (const line of lines) assert.equal(parseLine(line), null);
 });
+test('parseLine: a rejected rate_limit_event gives the reset time; an allowed one is ignored', () => {
+  // Shape from claude 2.1.321 (other rate_limit_info fields trimmed).
+  const line = (status: string) => JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status, resetsAt: 1736985600, rateLimitType: 'five_hour' }, session_id: 's' });
+  assert.deepEqual(parseLine(line('rejected')), { resetsAt: 1736985600 });
+  assert.equal(parseLine(line('allowed')), null);
+  assert.equal(parseLine('{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}'), null);
+});

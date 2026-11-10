@@ -46,3 +46,13 @@ test('toBridgeError classifies the detail', () => {
   assert.equal(toBridgeError('Not logged in · Please run /login', 1).info.case, 'not-signed-in');
   assert.equal(toBridgeError('', 9009).message, describe('not-installed', '').message);
 });
+test('describe: the usage limit says when it resets, if Claude Code reported it', () => {
+  const resetsAt = Date.UTC(2026, 10, 9, 17, 0) / 1000;
+  const { message } = describe('usage-limit', "You've hit your limit", resetsAt);
+  assert.match(message, /usage limit\. It resets \S/);
+  assert.ok(message.includes(new Date(resetsAt * 1000).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })));
+  assert.equal(describe('usage-limit', 'Usage limit reached').message, "You've reached your Claude usage limit. Try again later.");
+});
+test('toBridgeError: a rejected rate_limit_event makes it the usage limit, whatever the text', () => {
+  assert.equal(toBridgeError('API Error: 429', 1, 1736985600).info.case, 'usage-limit');
+});

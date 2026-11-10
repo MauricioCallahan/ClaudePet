@@ -42,7 +42,7 @@ export interface BridgeEvent {
   sessionId?: string;
   error?: string;
   resetsAt?: number; // the usage limit was hit; unix seconds when it resets
-  offline?: boolean; // Claude Code is retrying a request that got no response at all
+  offline?: number; // Claude Code is retrying a request that got no response at all: its attempt number
 }
 
 // One line of `claude -p --output-format stream-json`. Anything we do not need, or cannot parse, is null.
@@ -57,7 +57,8 @@ export function parseLine(line: string): BridgeEvent | null {
   const sessionId = typeof v.session_id === 'string' ? v.session_id : undefined;
   if (v.type === 'system' && v.subtype === 'init') return sessionId ? { sessionId } : null;
   // error_status is null when no HTTP response came back; a status (429, 529) is the API, not the network.
-  if (v.type === 'system' && v.subtype === 'api_retry') return v.error_status === null ? { offline: true } : null;
+  // attempt restarts for every request, so blips in different requests never add up.
+  if (v.type === 'system' && v.subtype === 'api_retry') return v.error_status === null && typeof v.attempt === 'number' ? { offline: v.attempt } : null;
   if (v.type === 'stream_event') {
     const d = v.event?.delta;
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
@@ -169,7 +170,6 @@ export class ClaudeBridge implements Bridge {
     signal.addEventListener('abort', onAbort, { once: true });
     let error: string | undefined;
     let resetsAt: number | undefined;
-    let offline = 0;
     let stopped: ErrorCase | undefined; // set when we end the process ourselves
     const stop = (c: ErrorCase) => {
       stopped = c;
@@ -181,7 +181,7 @@ export class ClaudeBridge implements Bridge {
         if (signal.aborted) break; // lines already buffered must not keep streaming after Stop
         idle.refresh();
         const ev = parseLine(line);
-        if (ev?.offline && ++offline >= OFFLINE_RETRIES) {
+        if (ev?.offline && ev.offline >= OFFLINE_RETRIES) {
           stop('network');
           break;
         }
@@ -192,7 +192,7 @@ export class ClaudeBridge implements Bridge {
       }
       const code = await exit;
       signal.throwIfAborted();
-      if (stopped === 'network') throw new BridgeError(describe('network', ''), `no response after ${offline} retries`);
+      if (stopped === 'network') throw new BridgeError(describe('network', ''), `no response after ${OFFLINE_RETRIES} retries`);
       if (stopped === 'timeout') throw new BridgeError(describe('timeout', ''), `no output for ${this.opts.idleMs} ms`);
       if (error) throw toBridgeError(error, code, resetsAt);
       if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code, resetsAt);

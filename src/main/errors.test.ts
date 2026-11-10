@@ -23,6 +23,7 @@ const samples: [string, number | null | undefined, string][] = [
   ['unknown', 1, 'Context limit reached · /compact or /clear to continue'],
   ['unknown', 1, 'API Error: 529 {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}'],
   ['unknown', 1, 'Claude Code asked to use Bash, but tools are off in pet chats.'],
+  ['unknown', 1, "ENOENT: no such file or directory, open 'C:\\x\\system-prompt.md'"],
   ['unknown', 1, ''],
 ];
 

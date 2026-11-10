@@ -4,7 +4,8 @@ export type ErrorCase = 'not-installed' | 'not-signed-in' | 'usage-limit' | 'net
 // Matched against Claude Code's error result, stderr and spawn errors, in this order.
 const PATTERNS: [ErrorCase, RegExp][] = [
   // 9009 / "not recognized": cmd.exe could not find the program (e.g. the .cmd shim's node is gone).
-  ['not-installed', /is not recognized as an internal or external command|\bENOENT\b|not installed/i],
+  // Only a failed spawn: an ENOENT that Claude Code itself reports is some other missing file.
+  ['not-installed', /is not recognized as an internal or external command|^spawn .+ ENOENT|not installed/i],
   ['not-signed-in', /not logged in|\/login|invalid api key|oauth token|authentication (required|failed)|sign in again/i],
   // Not just "limit reached": "Context limit reached" is not a usage limit.
   ['usage-limit', /usage limit|hit your (\w+ )*limit|\b(session|weekly|5-hour|opus|sonnet) limit/i],

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { addUser, isChatId, loadChats, loadMessages, recent, saveChats, saveMessages, setSession, upsert, type Chat } from './chats';
+import { addUser, isChatId, loadChats, loadMessages, matches, readMessages, recent, saveChats, saveMessages, setSession, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -249,7 +249,13 @@ if (!app.requestSingleInstanceLock()) {
       if (isChatId(id)) void openChat(id);
     });
     ipcMain.handle('chat:load', (_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
-    ipcMain.handle('chats:list', () => recent(chats, Infinity).map(({ id, title, updatedAt }) => ({ id, title, updatedAt })));
+    ipcMain.handle('chats:list', async (_e, query: unknown) => {
+      const q = typeof query === 'string' ? query.slice(0, 200) : '';
+      const all = recent(chats, Infinity);
+      // shortcut: reads every chat file on each search; keep messages in memory if the list gets slow
+      const hits = q.trim() ? (await Promise.all(all.map(async (c) => matches(c, await readMessages(c.id), q)))).flatMap((ok, i) => (ok ? [all[i]] : [])) : all;
+      return hits.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }));
+    });
     createWindow();
     createTray({
       toggle: toggleWindow,

@@ -66,6 +66,12 @@ export function addUser(msgs: Message[], text: string, at: number): Message[] {
   return last?.role === 'user' && last.text === text ? msgs : [...msgs, { role: 'user', text, at }];
 }
 
+// Case-insensitive substring of the title or any message; an empty query matches every chat.
+export function matches(chat: Chat, msgs: Message[], query: string): boolean {
+  const q = query.trim().toLowerCase();
+  return !q || chat.title.toLowerCase().includes(q) || msgs.some((m) => m.text.toLowerCase().includes(q));
+}
+
 export function makeTitle(text: string): string {
   const t = text.replace(/\s+/g, ' ').trim();
   return t.length > 40 ? t.slice(0, 39) + '…' : t;
@@ -101,6 +107,9 @@ export function loadMessages(id: string): Message[] {
     return [];
   }
 }
+
+// Async for search, which reads every chat file and must not block the main process.
+export const readMessages = (id: string): Promise<Message[]> => fs.promises.readFile(messagesFile(id), 'utf8').then(parseMessages, () => []);
 
 // Temp file + rename, as in settings.ts, so a crash can't leave half a file.
 // A failed write is logged, not thrown: every save rewrites the whole file, so the next one repairs it.

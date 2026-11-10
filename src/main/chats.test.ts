@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addUser, isChatId, makeTitle, parseChats, parseMessages, recent, setSession, upsert } from './chats';
+import { addUser, isChatId, makeTitle, matches, parseChats, parseMessages, recent, setSession, upsert } from './chats';
 
 test('parseChats keeps valid entries and drops malformed ones', () => {
   const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 1 }, { id: 2 }, null, 'x']);
@@ -68,4 +68,11 @@ test('isChatId accepts uuids and refuses anything that could leave the chats fol
 test('parseChats keeps createdAt and drops a non-number one', () => {
   const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 2, createdAt: 1 }, { id: 'b', title: 't', updatedAt: 1, createdAt: 'x' }]);
   assert.deepEqual(parseChats(text).map((c) => c.id), ['a']);
+});
+test('matches finds a word in the title or any message, ignoring case', () => {
+  const chat = { id: 'a', title: 'Trip to Lisbon', updatedAt: 1 };
+  const msgs = [{ role: 'user' as const, text: 'Pack a Raincoat?', at: 1 }];
+  for (const q of ['lisbon', 'RAINCOAT', ' trip ', '', '  ']) assert.ok(matches(chat, msgs, q), q);
+  assert.equal(matches(chat, msgs, 'paris'), false);
+  assert.equal(matches(chat, [], 'raincoat'), false);
 });

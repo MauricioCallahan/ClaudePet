@@ -88,7 +88,7 @@ declare const pet: {
   onOpenChat(cb: (id: string) => void): void;
   onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
-  listChats(): Promise<ChatSummary[]>;
+  listChats(query?: string): Promise<ChatSummary[]>;
   openChat(id: string): void;
   loadChat(id: string): Promise<Message[]>;
   stopReply(): void;
@@ -190,12 +190,22 @@ pet.onReplyError((error) => {
 const chatsButton = document.getElementById('chats-button')!;
 const chatsPanel = document.getElementById('chats')!;
 const chatList = document.getElementById('chat-list')!;
+const search = document.getElementById('search') as HTMLInputElement;
 async function showList(open: boolean): Promise<void> {
   chatsPanel.hidden = !open;
   messages.hidden = form.hidden = thinking.hidden = open;
   chatsButton.setAttribute('aria-expanded', String(open));
   if (!open) return input.focus();
-  const rows = (await pet.listChats()).map((c) => {
+  search.value = '';
+  search.focus();
+  await renderList();
+}
+let listed = 0; // only the latest search may draw, even if an older one answers last
+async function renderList(): Promise<void> {
+  const ask = ++listed;
+  const found = await pet.listChats(search.value);
+  if (ask !== listed) return;
+  const rows = found.map((c) => {
     const li = document.createElement('li');
     const row = document.createElement('button');
     row.type = 'button';
@@ -214,12 +224,16 @@ async function showList(open: boolean): Promise<void> {
   if (!rows.length) {
     const li = document.createElement('li');
     li.className = 'empty';
-    li.textContent = 'No chats yet.';
+    li.textContent = search.value.trim() ? 'No matching chats.' : 'No chats yet.';
     rows.push(li);
   }
   chatList.replaceChildren(...rows);
-  chatList.querySelector<HTMLElement>('button')?.focus();
 }
+let searchTimer = 0;
+search.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => void renderList(), 150); // one search per pause in typing, not per key
+});
 // Opening goes through main, the same path as the tray's Recent chats.
 chatList.addEventListener('click', (e) => {
   const row = (e.target as HTMLElement).closest<HTMLElement>('button.open');

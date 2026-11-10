@@ -70,3 +70,16 @@ test('a reopened chat shows its messages and continues the same conversation', a
   await send('what did I just ask?');
   await expect(lastReply()).toContainText('resumed 11111111-2222-4333-8444-555555555555: what did I just ask?');
 });
+
+test('search narrows the list by message text, not just the title', async () => {
+  await page.click('#chats-button');
+  await expect(rows()).toHaveCount(2);
+  await page.fill('#search', 'PANCAKE'); // in the title and the messages
+  await expect(rows()).toHaveText(['hello pancake']);
+  await page.fill('#search', 'just ask'); // only in a message of that chat
+  await expect(rows()).toHaveText(['hello pancake']);
+  await page.fill('#search', 'nothing like this');
+  await expect(page.locator('#chat-list')).toHaveText('No matching chats.');
+  await page.fill('#search', '');
+  await expect(rows()).toHaveCount(2);
+});

@@ -64,6 +64,12 @@ test('a follow-up resumes the session from the first reply', async () => {
   expect(chats[0].sessionId).toBe(SESSION);
 });
 
+test('a failing claude process ends the reply with its error and frees the input', async () => {
+  await send('/fail');
+  await idle();
+  await expect(page.locator('#messages')).toContainText('claude exited with code 1: fake claude failed');
+});
+
 test('Stop ends the reply at once and kills the process', async () => {
   const pid = await hang();
   await page.click('#send'); // shows Stop while a reply is running

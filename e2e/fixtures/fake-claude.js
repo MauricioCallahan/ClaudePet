@@ -14,6 +14,10 @@ process.stdin.on('end', () => {
     setInterval(() => {}, 1000); // never finishes: only Stop or Quit ends it
     return;
   }
+  if (prompt.startsWith('/fail')) {
+    process.stderr.write('fake claude failed\n');
+    process.exit(1);
+  }
   say(resume ? `resumed ${resume}: ` : 'fresh: ');
   say(prompt);
   out({ type: 'result', subtype: 'success', is_error: false, result: prompt, session_id });

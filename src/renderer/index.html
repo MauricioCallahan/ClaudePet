@@ -9,13 +9,21 @@
   <body>
     <header>
       <span>ClaudePet</span>
-      <button id="close" aria-label="Close">×</button>
+      <span>
+        <button id="chats-button" aria-expanded="false" aria-controls="chats">Chats</button>
+        <button id="close" aria-label="Close">×</button>
+      </span>
     </header>
     <main id="messages"></main>
+    <section id="chats" aria-label="Chats" hidden>
+      <input id="search" type="search" placeholder="Search chats…" aria-label="Search chats" />
+      <ul id="chat-list"></ul>
+    </section>
+    <div id="thinking" role="status" aria-live="polite"></div>
     <form id="form">
       <textarea id="input" rows="2" placeholder="Message Claude…" aria-label="Message"></textarea>
-      <button type="submit">Send</button>
+      <button type="submit" id="send">Send</button>
     </form>
-    <script src="renderer.js"></script>
+    <script type="module" src="renderer.js"></script>
   </body>
 </html>

@@ -102,7 +102,15 @@ export function loadPet(dir: string): Pet {
   const manifest = parsePetJson(fs.readFileSync(path.join(dir, 'pet.json'), 'utf8'));
   const sheetPath = path.join(dir, manifest.spritesheetPath);
   if (fs.statSync(sheetPath).size > MAX_SHEET_BYTES) throw new Error('the sprite sheet is larger than 20 MB');
-  const size = sheetSize(fs.readFileSync(sheetPath));
+  // Only the header: listing many pets must not read megabytes of image on the main thread.
+  const header = Buffer.alloc(30);
+  const fd = fs.openSync(sheetPath, 'r');
+  try {
+    fs.readSync(fd, header, 0, header.length, 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const size = sheetSize(header);
   if (!size) throw new Error('the sprite sheet is not a PNG or WebP image');
   return { manifest, sheetPath, ...checkSheet(size) };
 }

@@ -7,6 +7,21 @@ export interface Settings {
   y?: number;
   hotkey?: string; // Electron accelerator, default CommandOrControl+,
   model?: string; // Claude Code model alias or full id, default sonnet (picker UI in v0.2)
+  pet?: { enabled?: unknown; id?: unknown }; // read through petSettings; saveSettings merges shallowly, so save the whole object
+}
+
+export const DEFAULT_PET_ID = 'default'; // shortcut: placeholder id, rename when bullet 3 ships the built-in pet
+
+// Pet ids become folder names under pets\, so only lowercase letters, digits and dashes.
+export const isPetId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(v);
+
+// The settings file is hand-editable: any bad value falls back to its default.
+export function petSettings(s: Settings): { enabled: boolean; id: string } {
+  const p = s.pet && typeof s.pet === 'object' ? s.pet : {};
+  return {
+    enabled: typeof p.enabled === 'boolean' ? p.enabled : true,
+    id: isPetId(p.id) ? p.id : DEFAULT_PET_ID,
+  };
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

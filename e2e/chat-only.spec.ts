@@ -53,3 +53,12 @@ test('a denied permission ends the reply with a clear error instead of hanging',
   await idle();
   await expect(page.locator('#messages')).toContainText('Claude Code asked to use Bash, but tools are off in pet chats.');
 });
+
+test('the model comes from settings, defaults to sonnet, and a change applies to the next message', async () => {
+  const model = (args: string[]) => args[args.indexOf('--model') + 1];
+  expect(model((await started()).args)).toBe('sonnet');
+  const file = path.join(profile, 'settings.json');
+  const settings = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  fs.writeFileSync(file, JSON.stringify({ ...settings, model: 'opus' }));
+  expect(model((await started()).args)).toBe('opus');
+});

@@ -16,6 +16,14 @@ test('buildArgs turns off tools and the user setup in chat mode (the default) on
   assert.deepEqual(buildArgs({ mode: 'chat' }), chat);
   assert.ok(!buildArgs({ mode: 'code' }).includes('--tools'));
 });
+test('buildArgs passes the model from settings, or sonnet when it is missing or unsafe', () => {
+  const model = (m?: unknown) => {
+    const a = buildArgs({ model: m });
+    return a[a.indexOf('--model') + 1];
+  };
+  for (const ok of ['opus', 'claude-sonnet-5-5', 'opus[1m]', 'claude-3.5-haiku']) assert.equal(model(ok), ok);
+  for (const bad of [undefined, '', 5, 'x & calc', '--dangerously-skip-permissions', 'a b', 'opus"']) assert.equal(model(bad), 'sonnet');
+});
 test('shellArgs quotes empty values only when going through a shell', () => {
   assert.deepEqual(shellArgs(['--tools', '', '-p'], true), ['--tools', '""', '-p']);
   assert.deepEqual(shellArgs(['--tools', ''], false), ['--tools', '']);

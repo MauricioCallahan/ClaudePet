@@ -115,6 +115,7 @@ const bridge: Bridge =
           },
         },
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
+        model: () => loadSettings().model,
       });
 let inflight: AbortController | null = null;
 

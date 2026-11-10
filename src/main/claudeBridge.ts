@@ -83,6 +83,7 @@ export interface ClaudeBridgeOptions {
   cwd: string; // Claude Code keeps sessions per folder, so this must not change between runs
   sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string): void };
   mode: (chatId: string) => Mode;
+  model: () => unknown; // read on every send, so a settings change applies to the next message
 }
 
 // The session id becomes a command-line argument, so only a plain UUID is ever passed on.
@@ -92,10 +93,15 @@ const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 // Not --bare: it never reads the Pro login.
 const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands'];
 
-export function buildArgs({ mode = 'chat', sessionId }: { mode?: Mode; sessionId?: string } = {}): string[] {
+// The model comes from settings.json and becomes an argument through a shell: an alias or id like opus[1m] only.
+const MODEL = /^[A-Za-z0-9][\w.\-[\]]*$/;
+const DEFAULT_MODEL = 'sonnet';
+
+export function buildArgs({ mode = 'chat', sessionId, model }: { mode?: Mode; sessionId?: string; model?: unknown } = {}): string[] {
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
   // --permission-prompts none: the process is hidden, so anything that would ask for permission is denied, never left waiting.
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompts', 'none'];
+  args.push('--model', typeof model === 'string' && MODEL.test(model) ? model : DEFAULT_MODEL);
   if (mode === 'chat') args.push(...CHAT_ONLY);
   if (sessionId && UUID.test(sessionId)) args.push('--resume', sessionId);
   return args;
@@ -110,7 +116,7 @@ export class ClaudeBridge implements Bridge {
     const exe = this.opts.exe();
     if (!exe) throw new Error('Claude Code is not installed.');
     const { file, shell } = command(exe);
-    const args = shellArgs(buildArgs({ mode: this.opts.mode(chatId), sessionId: this.opts.sessions.get(chatId) }), shell);
+    const args = shellArgs(buildArgs({ mode: this.opts.mode(chatId), sessionId: this.opts.sessions.get(chatId), model: this.opts.model() }), shell);
     fs.mkdirSync(this.opts.cwd, { recursive: true });
     const child = spawn(file, args, { cwd: this.opts.cwd, shell, windowsHide: true });
     let stderr = '';

@@ -136,3 +136,23 @@ test('loadPet reads a pet folder and finds its rows', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The committed test pets (made by e2e/fixtures/make-pets.js); this file runs from dist/main.
+const fixture = (id: string) => path.join(__dirname, '../../e2e/fixtures/pets', id);
+
+test('fixture: a valid pet loads with all 11 rows', () => {
+  const p = loadPet(fixture('valid'));
+  assert.equal(p.manifest.id, 'valid');
+  assert.equal(p.rows, 11);
+});
+test('fixture: a pet with extra fields and only an idle row loads', () => {
+  const p = loadPet(fixture('extra-fields'));
+  assert.deepEqual(p.manifest, { id: 'extra-fields', displayName: 'Test extra-fields', description: 'ClaudePet test pet', spritesheetPath: 'spritesheet.png' });
+  assert.equal(p.rows, 1);
+});
+test('fixture: a broken pet.json is rejected', () => {
+  assert.throws(() => loadPet(fixture('broken-json')), /pet.json is not valid JSON/);
+});
+test('fixture: a wrongly sized sheet is rejected with the expected size', () => {
+  assert.throws(() => loadPet(fixture('wrong-size')), /is 1536x2000; expected 1536 wide/);
+});

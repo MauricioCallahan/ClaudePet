@@ -51,3 +51,7 @@ function pet(id, manifest, png) {
 const manifest = (id) => ({ id, displayName: `Test ${id}`, description: 'ClaudePet test pet', spritesheetPath: 'spritesheet.png' });
 
 pet('valid', manifest('valid'), sheet(11));
+pet('broken-json', JSON.stringify(manifest('broken-json')).slice(0, 40), sheet(1));
+pet('wrong-size', manifest('wrong-size'), sheet(10, 2000));
+// Codex's extra fields plus one nested object; a one-row sheet, so it also stands for a pet with only an idle row.
+pet('extra-fields', { ...manifest('extra-fields'), spriteVersionNumber: 2, kind: 'object', author: { name: 'ClaudePet tests' } }, sheet(1));

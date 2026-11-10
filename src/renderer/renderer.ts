@@ -35,11 +35,11 @@ function setState(s: State): void {
 }
 
 // User and error text goes in with textContent; Claude's replies are untrusted Markdown, rendered only through renderMarkdown (sanitized).
-function addMessage(text: string, who: 'user' | 'claude', scroll = true): HTMLElement {
+function addMessage(text: string, who: 'user' | 'claude', scroll = true, at = Date.now()): HTMLElement {
   const el = document.createElement('div');
   el.className = `msg ${who}`;
   el.textContent = text;
-  el.title = new Date().toLocaleTimeString(); // hover shows when it was sent
+  el.title = new Date(at).toLocaleTimeString(); // hover shows when it was sent
   messages.appendChild(el);
   if (scroll) messages.scrollTop = messages.scrollHeight;
   return el;
@@ -80,6 +80,7 @@ document.getElementById('close')!.addEventListener('click', () => window.close()
 type ReplyError = { message: string; link?: string; retry?: boolean };
 
 type ChatSummary = { id: string; title: string; updatedAt: number };
+type Message = { role: 'user' | 'claude'; text: string; at: number };
 
 // Provided by the preload script.
 declare const pet: {
@@ -88,6 +89,8 @@ declare const pet: {
   onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
   listChats(): Promise<ChatSummary[]>;
+  openChat(id: string): void;
+  loadChat(id: string): Promise<Message[]>;
   stopReply(): void;
   copyText(text: string): void;
   onReplyStart(cb: () => void): void;
@@ -124,23 +127,27 @@ function flush(): void {
   if (!pending) return;
   // Decide before growing: follow the reply only if the reader is at the bottom.
   const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
-  if (!reply) {
-    // Created on the first word, so no empty bubble while waiting. The body is re-rendered; the button stays.
-    reply = addMessage('', 'claude', false);
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'copy-reply';
-    button.textContent = 'Copy reply';
-    reply.append(document.createElement('div'), button);
-  }
-  const body = reply.firstElementChild as HTMLElement;
+  reply ||= addReply(); // created on the first word, so no empty bubble while waiting
   // shortcut: re-parses the whole reply each frame, quadratic for very long replies; stream-parse if that shows up
-  const raw = (rawText.get(reply) ?? '') + pending;
-  rawText.set(reply, raw);
-  body.innerHTML = renderMarkdown(raw, purify);
-  addCopyButtons(body);
+  renderReply(reply, (rawText.get(reply) ?? '') + pending);
   pending = '';
   if (stick) messages.scrollTop = messages.scrollHeight;
+}
+// A reply bubble: the body is re-rendered as text streams in; the Copy reply button stays.
+function addReply(at?: number): HTMLElement {
+  const el = addMessage('', 'claude', false, at);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'copy-reply';
+  button.textContent = 'Copy reply';
+  el.append(document.createElement('div'), button);
+  return el;
+}
+function renderReply(el: HTMLElement, raw: string): void {
+  rawText.set(el, raw);
+  const body = el.firstElementChild as HTMLElement;
+  body.innerHTML = renderMarkdown(raw, purify);
+  addCopyButtons(body);
 }
 function dropReply(): void {
   cancelAnimationFrame(frame);
@@ -213,22 +220,32 @@ async function showList(open: boolean): Promise<void> {
   chatList.replaceChildren(...rows);
   chatList.querySelector<HTMLElement>('button')?.focus();
 }
+// Opening goes through main, the same path as the tray's Recent chats.
+chatList.addEventListener('click', (e) => {
+  const row = (e.target as HTMLElement).closest<HTMLElement>('button.open');
+  if (row?.dataset.id) pet.openChat(row.dataset.id);
+});
 chatsButton.addEventListener('click', () => void showList(chatsButton.getAttribute('aria-expanded') !== 'true'));
 chatsPanel.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') void showList(false);
 });
 
-// shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history
-function resetChat(id: string): void {
+function resetChat(id: string, history: Message[] = []): void {
   chatId = id;
   dropReply(); // a reply cut off by New chat must not write into the new chat
   setState('idle');
+  void showList(false);
   messages.replaceChildren();
-  addMessage("Hi, I'm ClaudePet.", 'claude');
+  for (const m of history) {
+    if (m.role === 'user') addMessage(m.text, 'user', false, m.at);
+    else renderReply(addReply(m.at), m.text);
+  }
+  if (!history.length) addMessage("Hi, I'm ClaudePet.", 'claude');
+  messages.scrollTop = messages.scrollHeight;
   input.value = '';
   input.focus();
 }
 pet.onNewChat(() => resetChat(crypto.randomUUID()));
-pet.onOpenChat(resetChat);
+pet.onOpenChat(async (id) => resetChat(id, await pet.loadChat(id)));
 pet.onFocusInput(() => input.focus());
 resetChat(chatId);

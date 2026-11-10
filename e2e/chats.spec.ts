@@ -60,3 +60,13 @@ test('the chat list shows every chat, newest first', async () => {
   await expect(page.locator('#chats')).toBeHidden();
   await expect(page.locator('#input')).toBeFocused();
 });
+
+test('a reopened chat shows its messages and continues the same conversation', async () => {
+  await app.close();
+  await launch();
+  await page.click('#chats-button');
+  await rows().filter({ hasText: 'hello pancake' }).click();
+  await expect(page.locator('#messages .msg')).toHaveText(['hello pancake', /fresh: hello pancake/]);
+  await send('what did I just ask?');
+  await expect(lastReply()).toContainText('resumed 11111111-2222-4333-8444-555555555555: what did I just ask?');
+});

@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('pet', {
     ipcRenderer.send('chat:message', chatId, text);
   },
   listChats: (): Promise<{ id: string; title: string; updatedAt: number }[]> => ipcRenderer.invoke('chats:list'),
+  openChat: (id: string): void => {
+    ipcRenderer.send('chat:open', id);
+  },
+  loadChat: (id: string): Promise<{ role: 'user' | 'claude'; text: string; at: number }[]> => ipcRenderer.invoke('chat:load', id),
   stopReply: (): void => {
     ipcRenderer.send('chat:stop');
   },

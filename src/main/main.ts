@@ -131,6 +131,7 @@ const bridge: Bridge =
         idleMs: Number(process.env.CLAUDEPET_IDLE_MS) || 15 * 60_000,
       });
 let inflight: AbortController | null = null;
+let running: Promise<void> = Promise.resolve(); // the current runReply, so a reopen can wait for its save
 
 // shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
 function logError(e: BridgeError): void {
@@ -169,6 +170,14 @@ async function runReply(id: string, text: string): Promise<void> {
     inflight = null;
     refreshTray();
   }
+}
+
+// Shared by the tray's Recent chats and the chat list. Switching chats ends the running reply,
+// and waits for it to be saved, so a reopened chat shows it and it cannot stream into the wrong chat.
+async function openChat(id: string): Promise<void> {
+  inflight?.abort();
+  await running;
+  showAndSend('chat:open', id);
 }
 
 // Shared by the tray and (Bullet 3) the global hotkey.
@@ -230,12 +239,16 @@ if (!app.requestSingleInstanceLock()) {
       saveChats(chats);
       saveMessages(id, addUser(loadMessages(id), text, now));
       refreshTray();
-      void runReply(id, text);
+      running = runReply(id, text);
     });
     ipcMain.on('clipboard:write', (_e, text: unknown) => {
       if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
+    ipcMain.on('chat:open', (_e, id: unknown) => {
+      if (isChatId(id)) void openChat(id);
+    });
+    ipcMain.handle('chat:load', (_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
     ipcMain.handle('chats:list', () => recent(chats, Infinity).map(({ id, title, updatedAt }) => ({ id, title, updatedAt })));
     createWindow();
     createTray({
@@ -248,10 +261,7 @@ if (!app.requestSingleInstanceLock()) {
         showAndSend('chat:new');
       },
       recent: () => recent(chats),
-      openChat: (id) => {
-        inflight?.abort();
-        showAndSend('chat:open', id);
-      },
+      openChat: (id) => void openChat(id),
     });
     const { hotkey: saved } = loadSettings();
     registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);

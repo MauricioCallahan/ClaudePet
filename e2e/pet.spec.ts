@@ -40,6 +40,12 @@ const moveBox = (x: number, y: number) =>
   app.evaluate(({ BrowserWindow }, [x, y]) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))!.setPosition(x, y), [x, y]);
 // Where the pet should stand on a box that has room above it.
 const onTop = (box: { x: number; y: number; width: number }) => ({ x: box.x + Math.round((box.width - 96) / 2), y: box.y - 104, width: 96, height: 104 });
+// If the bounds checks below fail by a few pixels, it is this machine's display scaling (Windows rounds window
+// bounds at 125%, 150%...), not a bug: increase PX_TOLERANCE.
+const PX_TOLERANCE = 1;
+// The largest difference, in pixels, between two rectangles (or numbers).
+const offBy = <T extends Record<string, number>>(actual: T | undefined, want: T) =>
+  actual ? Math.max(...Object.keys(want).map((k) => Math.abs(actual[k] - want[k]))) : Infinity;
 
 test.describe('with the pet on', () => {
   test.beforeAll(() => launch());
@@ -48,13 +54,13 @@ test.describe('with the pet on', () => {
   test('the pet opens centered on top of the box', async () => {
     await expect.poll(async () => (await windows()).petVisible).toBe(true);
     const w = await windows();
-    expect(w.pet).toEqual(onTop(w.box));
+    expect(offBy(w.pet, onTop(w.box))).toBeLessThanOrEqual(PX_TOLERANCE);
   });
 
   test('the pet follows the box when it moves', async () => {
     const { box } = await windows();
     await moveBox(box.x - 50, box.y + 20);
-    await expect.poll(async () => (await windows()).pet).toEqual(onTop({ ...box, x: box.x - 50, y: box.y + 20 }));
+    await expect.poll(async () => offBy((await windows()).pet, onTop({ ...box, x: box.x - 50, y: box.y + 20 }))).toBeLessThanOrEqual(PX_TOLERANCE);
   });
 
   test('a box dropped at the top of the screen moves down so the pet stays fully visible', async () => {
@@ -62,8 +68,9 @@ test.describe('with the pet on', () => {
     await moveBox(box.x, area.y);
     // Windows emits 'moved' only when a real drag ends, not after setPosition, so stand in for the drop.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))!.emit('moved'));
-    await expect.poll(async () => (await windows()).box.y).toBe(area.y + 104);
-    expect((await windows()).pet).toEqual(onTop({ ...box, y: area.y + 104 }));
+    await expect.poll(async () => Math.abs((await windows()).box.y - (area.y + 104))).toBeLessThanOrEqual(PX_TOLERANCE);
+    const w = await windows(); // against where the box really landed, so two 1 px roundings do not add up
+    expect(offBy(w.pet, onTop(w.box))).toBeLessThanOrEqual(PX_TOLERANCE);
   });
 
   test('the pet hides and shows with the box', async () => {

@@ -73,3 +73,13 @@ test('chat mode replaces the coding prompt with the pet prompt plus the custom i
   expect(prompt).toContain('Always end with a paw print.');
   expect(fs.readdirSync(cwd)).toEqual([]);
 });
+
+test('an unreadable instructions file ends the reply with an error instead of being skipped', async () => {
+  const file = path.join(profile, 'instructions.md');
+  fs.rmSync(file, { force: true });
+  fs.mkdirSync(file); // a folder by mistake: reading it fails with something other than "not found"
+  await send('/args');
+  await idle();
+  await expect(lastReply()).toContainText('instructions.md');
+  await expect(lastReply().locator('pre code')).toHaveCount(0); // claude was never started
+});

@@ -119,8 +119,10 @@ const bridge: Bridge =
         instructions: () => {
           try {
             return fs.readFileSync(path.join(app.getPath('userData'), 'instructions.md'), 'utf8');
-          } catch {
-            return undefined; // no custom instructions file
+          } catch (err) {
+            // No file means no custom instructions; any other error (locked, a folder) ends the reply with its message.
+            if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+            throw new Error(`Could not read your instructions.md: ${(err as Error).message}`);
           }
         },
         promptFile: path.join(app.getPath('userData'), 'system-prompt.md'),

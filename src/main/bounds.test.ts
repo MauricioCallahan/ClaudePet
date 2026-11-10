@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitPosition, petPosition } from './bounds';
+import { fitPosition, petPosition, roomForPet } from './bounds';
 
 const size = { width: 360, height: 480 };
 const main = { x: 0, y: 0, width: 1920, height: 1040 };
@@ -25,4 +25,7 @@ test('the pet stands centered on the box top edge', () => {
 });
 test('the pet is rounded to whole pixels', () => {
   assert.deepEqual(petPosition({ x: 500, y: 300, width: 361, height: 480 }, pet, main), { x: 633, y: 196 });
+});
+test('a box too close to the top moves down to make room for the pet', () => {
+  assert.deepEqual(roomForPet({ x: 500, y: 20, ...size }, 104, main), { x: 500, y: 104 });
 });

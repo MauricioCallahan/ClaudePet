@@ -1,6 +1,6 @@
 import { BrowserWindow, screen } from 'electron';
 import path from 'node:path';
-import { petPosition } from './bounds';
+import { petPosition, roomForPet } from './bounds';
 
 const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
 
@@ -10,6 +10,14 @@ let pet: BrowserWindow | null = null;
 function place(box: BrowserWindow): void {
   const b = box.getBounds();
   pet?.setBounds({ ...petPosition(b, SIZE, screen.getDisplayMatching(b).workArea), ...SIZE });
+}
+
+// Only once a drag or resize ends: moving the box inside Windows' drag loop makes it jitter.
+// Runs before main's debounced save, so the saved spot is the snapped one.
+function makeRoom(box: BrowserWindow): void {
+  const b = box.getBounds();
+  const { x, y } = roomForPet(b, SIZE.height, screen.getDisplayMatching(b).workArea);
+  if (y !== b.y) box.setPosition(x, y);
 }
 
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
@@ -32,7 +40,12 @@ export function createPet(box: BrowserWindow): void {
     },
   });
   pet.loadFile(path.join(__dirname, '../renderer/pet.html'));
+  makeRoom(box); // a saved spot from before the pet existed may be too high
   place(box);
+  box.on('move', () => place(box));
+  box.on('resize', () => place(box));
+  box.on('moved', () => makeRoom(box));
+  box.on('resized', () => makeRoom(box));
   pet.once('ready-to-show', () => {
     if (box.isVisible()) pet?.showInactive();
   });

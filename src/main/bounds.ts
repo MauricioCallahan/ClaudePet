@@ -31,3 +31,8 @@ export function petPosition(box: Rect, pet: { width: number; height: number }, a
     y: clamp(box.y - pet.height, area.y, area.y + area.height - pet.height),
   };
 }
+
+// Where the box must go so the pet standing on it fits below the top of the screen.
+export function roomForPet(box: Rect, petHeight: number, area: Rect): { x: number; y: number } {
+  return { x: box.x, y: Math.max(box.y, area.y + petHeight) };
+}

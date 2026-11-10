@@ -21,6 +21,7 @@ function makeRoom(box: BrowserWindow): void {
 }
 
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
+// shortcut: the whole 96x104 rectangle takes clicks, even transparent pixels; add setIgnoreMouseEvents hit-testing if it gets in the way
 export function createPet(box: BrowserWindow, onClick: () => void): void {
   pet = new BrowserWindow({
     ...SIZE,

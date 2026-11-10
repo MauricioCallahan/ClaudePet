@@ -68,6 +68,24 @@ test('the chosen pet survives a restart', async () => {
   await expect.poll(shownPet).toBe('valid');
 });
 
+test('Hide pet hides the pet at once, keeps it hidden through Show/Hide, and brings it back', async () => {
+  const box = (action: 'hide' | 'show') =>
+    app.evaluate(({ BrowserWindow }, a) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))![a](), action);
+  const petVisible = () => app.evaluate(({ BrowserWindow }) => !!BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('pet.html'))?.isVisible());
+  const enabled = () => JSON.parse(fs.readFileSync(path.join(profile, 'settings.json'), 'utf8')).pet.enabled;
+  await expect.poll(petVisible).toBe(true);
+  await main('main.js', 'togglePetHidden');
+  await expect.poll(petVisible).toBe(false);
+  expect(enabled()).toBe(false);
+  await box('hide');
+  await box('show');
+  await pet.waitForTimeout(300);
+  expect(await petVisible()).toBe(false);
+  await main('main.js', 'togglePetHidden');
+  await expect.poll(petVisible).toBe(true);
+  expect(enabled()).toBe(true);
+});
+
 test('deleting the chosen pet and pressing Refresh falls back to the built-in pet', async () => {
   const p = await picker();
   fs.rmSync(path.join(profile, 'pets', 'valid'), { recursive: true });

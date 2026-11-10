@@ -213,6 +213,13 @@ function savePetSetting(patch: Partial<typeof petSetting>): void {
   saveSettings({ pet: petSetting });
 }
 
+// Tray → Pet → Hide pet.
+export function togglePetHidden(): void {
+  savePetSetting({ enabled: !petSetting.enabled });
+  setPetEnabled(petSetting.enabled);
+  refreshTray();
+}
+
 const pickerItems = (): PickerItem[] =>
   petScan.pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
 
@@ -356,11 +363,7 @@ if (!app.requestSingleInstanceLock()) {
       choosePet: openPicker,
       refreshPets,
       isPetHidden: () => !petSetting.enabled,
-      togglePetHidden: () => {
-        savePetSetting({ enabled: !petSetting.enabled });
-        setPetEnabled(petSetting.enabled);
-        refreshTray();
-      },
+      togglePetHidden,
     });
     const { hotkey: saved } = loadSettings();
     registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);

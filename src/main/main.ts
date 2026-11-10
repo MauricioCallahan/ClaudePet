@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { createPet, setPet, setPetEnabled } from './petWindow';
 import { COLUMNS, type Pet } from './petFormat';
 import { initPicker, openPicker, pickerChanged, type PickerItem } from './pickerWindow';
-import { ensurePetsDir, pickPet, scanPets, type PetScan } from './pets';
+import { ensurePetsDir, logPets, pickPet, scanPets, type PetScan } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -195,7 +195,7 @@ let shownPet: Pet | undefined;
 // Shows pet.id, or the built-in pet with the reason in the log. Before the pet window exists this only picks.
 function showChosenPet(): void {
   const { pet, reason } = pickPet(petScan, petSetting.id);
-  if (reason) console.error(reason);
+  if (reason) logPets(reason);
   shownPet = pet;
   setPet(pet);
 }

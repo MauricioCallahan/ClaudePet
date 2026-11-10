@@ -63,8 +63,18 @@ export function scanPets(): PetScan {
     { dir: userPetsDir(), source: 'user' },
     { dir: codexPetsDir(process.env, os.homedir()), source: 'codex' },
   ]);
-  for (const s of scan.skipped) console.error(`Pet folder ${s.dir} skipped: ${s.reason}`);
+  for (const s of scan.skipped) logPets(`Pet folder ${s.dir} skipped: ${s.reason}`);
   return scan;
+}
+
+// To the console and to %APPDATA%\ClaudePet\pets.log, so an installed app can still say why a pet didn't show.
+export function logPets(line: string): void {
+  console.error(line);
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'pets.log'), `${new Date().toISOString()} ${line}\n`);
+  } catch {
+    // a log we can't write must not stop the pets from loading
+  }
 }
 
 // The chosen pet, or the built-in default with the reason why. pet.id is never rewritten, so the pet returns if its folder does.

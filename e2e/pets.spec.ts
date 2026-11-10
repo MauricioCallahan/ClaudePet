@@ -29,6 +29,7 @@ async function picker(): Promise<Page> {
   await expect.poll(() => app.windows().some((p) => p.url().endsWith('picker.html'))).toBe(true);
   return app.windows().find((p) => p.url().endsWith('picker.html'))!;
 }
+const petsLog = () => fs.readFileSync(path.join(profile, 'pets.log'), 'utf8');
 const listed = (p: Page) => p.$$eval('.pet', (bs) => bs.map((b) => (b as HTMLElement).dataset.id + (b.getAttribute('aria-pressed') === 'true' ? '*' : '')));
 
 test.afterAll(async () => {
@@ -50,6 +51,7 @@ test('pets copied into the ClaudePet and Codex folders appear after Refresh pets
   await main('main.js', 'refreshPets');
   const p = await picker();
   await expect.poll(() => listed(p)).toEqual(['pip*', 'valid', 'extra-fields']);
+  expect(petsLog()).toMatch(/Pet folder .*broken-json skipped: pet.json is not valid JSON/);
 });
 
 test('choosing a pet in the picker swaps it at once and saves it', async () => {
@@ -74,4 +76,5 @@ test('deleting the chosen pet and pressing Refresh falls back to the built-in pe
   await expect.poll(() => listed(p)).toEqual(['pip*', 'extra-fields']);
   // The setting stays, so the pet comes back if its folder does.
   expect(JSON.parse(fs.readFileSync(path.join(profile, 'settings.json'), 'utf8')).pet.id).toBe('valid');
+  expect(petsLog()).toContain('Pet "valid" is not installed; showing "pip" instead');
 });

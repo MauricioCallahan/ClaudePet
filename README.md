@@ -22,7 +22,7 @@ ClaudePet comes with Pip. To add another pet, use either:
 - **Copy its folder** into `%APPDATA%\ClaudePet\pets\` (the folder name must be the pet's `id`).
 - **Use Codex's installer:** `npx codex-pets add <id>`. ClaudePet also reads Codex's pets folder (`%CODEX_HOME%\pets\`, or `%USERPROFILE%\.codex\pets\`) but never changes it.
 
-Then open the **Chats** tray menu, choose **Pet → Refresh pets**, and pick the pet in **Pet → Choose pet…**. A folder that isn't a valid pet is skipped, and the reason is printed in the log.
+Then open the **Chats** tray menu, choose **Pet → Refresh pets**, and pick the pet in **Pet → Choose pet…**. A folder that isn't a valid pet is skipped, and the reason is written to `%APPDATA%\ClaudePet\pets.log`.
 
 ## Pet format
 

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { addUser, deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
+import { deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -253,7 +253,7 @@ if (!app.requestSingleInstanceLock()) {
     else void readVersion(claude).then((v) => console.log(`Claude Code: ${claude} (${v ?? 'unknown version'})`));
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
-    ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
+    ipcMain.on('chat:message', (_e, id: unknown, text: unknown, retry: unknown) => {
       if (!isChatId(id) || typeof text !== 'string') return;
       if (text.length > MAX_MESSAGE_LENGTH) {
         // The renderer is already waiting on a reply; without this it would stay on Stop forever.
@@ -265,7 +265,7 @@ if (!app.requestSingleInstanceLock()) {
       const now = Date.now();
       chats = upsert(chats, id, text, now);
       saveChats(chats);
-      saveMessages(id, addUser(loadMessages(id), text, now));
+      if (retry !== true) saveMessages(id, [...loadMessages(id), { role: 'user', text, at: now }]); // a Retry's message is already stored
       refreshTray();
       running = runReply(id, text);
     });

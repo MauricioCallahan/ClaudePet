@@ -58,10 +58,10 @@ form.addEventListener('submit', (e) => {
   input.value = '';
 });
 
-function send(text: string): void {
+function send(text: string, retry = false): void {
   messages.querySelectorAll('button.retry').forEach((b) => b.remove()); // only the latest error can be retried
   lastText = text;
-  pet.sendMessage(chatId, text);
+  pet.sendMessage(chatId, text, retry);
   setState('thinking'); // main answers with reply:start/chunk/end
 }
 
@@ -87,7 +87,7 @@ declare const pet: {
   onNewChat(cb: () => void): void;
   onOpenChat(cb: (id: string) => void): void;
   onFocusInput(cb: () => void): void;
-  sendMessage(chatId: string, text: string): void;
+  sendMessage(chatId: string, text: string, retry: boolean): void;
   listChats(query?: string): Promise<ChatSummary[]>;
   openChat(id: string): void;
   loadChat(id: string): Promise<Message[]>;
@@ -106,7 +106,7 @@ declare const pet: {
 messages.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
   if (target.closest('button.retry')) {
-    send(lastText); // no new user bubble: the message is already on screen
+    send(lastText, true); // no new user bubble, and no second copy in the store: the message is already there
     return;
   }
   const whole = target.closest<HTMLElement>('button.copy-reply'); // copies the reply's Markdown source

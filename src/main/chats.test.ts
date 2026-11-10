@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { addUser, isChatId, makeTitle, matches, parseChats, parseMessages, recent, rename, setSession, transcriptPath, upsert } from './chats';
+import { isChatId, makeTitle, matches, parseChats, parseMessages, recent, rename, setSession, transcriptPath, upsert } from './chats';
 
 test('parseChats keeps valid entries and drops malformed ones', () => {
   const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 1 }, { id: 2 }, null, 'x']);
@@ -54,13 +54,6 @@ test('parseMessages keeps valid messages and falls back to [] for a corrupt file
   const text = JSON.stringify([ok, { role: 'system', text: 'x', at: 1 }, { role: 'claude', text: 5, at: 1 }, null]);
   assert.deepEqual(parseMessages(text), [ok]);
   for (const bad of ['', '{"a":', 'null', '{}']) assert.deepEqual(parseMessages(bad), []);
-});
-test('addUser stores a Retry once, but a new message after a reply again', () => {
-  let m = addUser([], 'hi', 1);
-  m = addUser(m, 'hi', 2); // Retry after an error: no reply in between
-  assert.equal(m.length, 1);
-  m = addUser([...m, { role: 'claude', text: 'hello', at: 3 }], 'hi', 4);
-  assert.deepEqual(m.map((x) => x.role), ['user', 'claude', 'user']);
 });
 test('isChatId accepts uuids and refuses anything that could leave the chats folder', () => {
   assert.ok(isChatId(crypto.randomUUID()));

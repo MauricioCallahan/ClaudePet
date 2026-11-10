@@ -60,12 +60,6 @@ export function parseMessages(text: string): Message[] {
   }
 }
 
-// Retry resends the last message without a new bubble, so it must not be stored twice.
-export function addUser(msgs: Message[], text: string, at: number): Message[] {
-  const last = msgs[msgs.length - 1];
-  return last?.role === 'user' && last.text === text ? msgs : [...msgs, { role: 'user', text, at }];
-}
-
 // Case-insensitive substring of the title or any message; an empty query matches every chat.
 export function matches(chat: Chat, msgs: Message[], query: string): boolean {
   const q = query.trim().toLowerCase();

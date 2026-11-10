@@ -13,8 +13,8 @@ contextBridge.exposeInMainWorld('pet', {
   onFocusInput: (cb: () => void): void => {
     ipcRenderer.on('chat:focus', () => cb());
   },
-  sendMessage: (chatId: string, text: string): void => {
-    ipcRenderer.send('chat:message', chatId, text);
+  sendMessage: (chatId: string, text: string, retry: boolean): void => {
+    ipcRenderer.send('chat:message', chatId, text, retry);
   },
   listChats: (query = ''): Promise<{ id: string; title: string; updatedAt: number }[]> => ipcRenderer.invoke('chats:list', query),
   openChat: (id: string): void => {

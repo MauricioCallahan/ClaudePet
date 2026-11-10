@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge } from './bridge';
+import type { Mode } from './chats';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
 export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boolean, home: string): string | undefined {
@@ -19,6 +20,11 @@ export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boo
 export function command(exe: string): { file: string; shell: boolean } {
   const shell = /\.(cmd|bat)$/i.test(exe);
   return { file: shell ? `"${exe}"` : exe, shell };
+}
+
+// Through a shell the args are joined with spaces, so an empty value would vanish and the flag would take the next one.
+export function shellArgs(args: string[], shell: boolean): string[] {
+  return shell ? args.map((a) => (a === '' ? '""' : a)) : args;
 }
 
 export function readVersion(exe: string): Promise<string | undefined> {
@@ -52,6 +58,12 @@ export function parseLine(line: string): BridgeEvent | null {
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
   }
   if (v.type === 'result') {
+    // Reported as a success, but a denied tool means the reply is not what was asked for.
+    const denied = Array.isArray(v.permission_denials) ? v.permission_denials[0] : undefined;
+    if (denied) {
+      const tool = typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool';
+      return { error: `Claude Code asked to use ${tool}, but tools are off in pet chats.` };
+    }
     if (!v.is_error) return sessionId ? { sessionId } : null;
     return { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' };
   }
@@ -70,15 +82,46 @@ export interface ClaudeBridgeOptions {
   exe: () => string | undefined;
   cwd: string; // Claude Code keeps sessions per folder, so this must not change between runs
   sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string): void };
+  mode: (chatId: string) => Mode;
+  model: () => unknown; // read on every send, so a settings change applies to the next message
+  instructions: () => string | undefined; // the user's own custom instructions file, if any
+  promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
+}
+
+// Replaces Claude Code's coding prompt in chat mode. Claude Code keeps a chat's first prompt, so edits apply to new chats.
+export const PET_PROMPT = [
+  "You are ClaudePet, a friendly companion in a small chat box on the user's Windows desktop.",
+  'Keep replies short and easy to read in a narrow window: a few sentences or a short list, longer only when asked.',
+  'Markdown works (lists, code blocks, links); avoid wide tables and large headings.',
+  'You have no tools in this chat: you cannot read files, run commands or browse the web, so say so plainly when asked.',
+].join(' ');
+
+export function systemPrompt(custom?: string): string {
+  const own = custom?.trim();
+  return own ? `${PET_PROMPT}\n\nThe user's own instructions:\n\n${own}` : PET_PROMPT;
 }
 
 // The session id becomes a command-line argument, so only a plain UUID is ever passed on.
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
-export function buildArgs(sessionId?: string): string[] {
+// Chat mode: no tools, and none of the user's own settings, hooks, plugins, connectors or skills.
+// Not --bare: it never reads the Pro login.
+const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands'];
+
+// The model comes from settings.json and becomes an argument through a shell: an alias or id like opus[1m] only.
+const MODEL = /^[A-Za-z0-9][\w.\-[\]]*$/;
+const DEFAULT_MODEL = 'sonnet';
+
+// promptFile is relative to cwd: an absolute path could hold spaces (a username), which break the shell command line.
+export function buildArgs({ mode = 'chat', sessionId, model, promptFile }: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string } = {}): string[] {
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
-  return sessionId && UUID.test(sessionId) ? [...args, '--resume', sessionId] : args;
+  // --permission-prompts none: the process is hidden, so anything that would ask for permission is denied, never left waiting.
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompts', 'none'];
+  args.push('--model', typeof model === 'string' && MODEL.test(model) ? model : DEFAULT_MODEL);
+  if (mode === 'chat') args.push(...CHAT_ONLY);
+  if (mode === 'chat' && promptFile) args.push('--system-prompt-file', promptFile);
+  if (sessionId && UUID.test(sessionId)) args.push('--resume', sessionId);
+  return args;
 }
 
 // Runs the claude CLI once per message and streams its reply.
@@ -90,9 +133,15 @@ export class ClaudeBridge implements Bridge {
     const exe = this.opts.exe();
     if (!exe) throw new Error('Claude Code is not installed.');
     const { file, shell } = command(exe);
-    const args = buildArgs(this.opts.sessions.get(chatId));
-    fs.mkdirSync(this.opts.cwd, { recursive: true });
-    const child = spawn(file, args, { cwd: this.opts.cwd, shell, windowsHide: true });
+    const { cwd, promptFile } = this.opts;
+    const mode = this.opts.mode(chatId);
+    fs.mkdirSync(cwd, { recursive: true });
+    if (mode === 'chat') fs.writeFileSync(promptFile, systemPrompt(this.opts.instructions()));
+    const args = shellArgs(
+      buildArgs({ mode, sessionId: this.opts.sessions.get(chatId), model: this.opts.model(), promptFile: path.relative(cwd, promptFile) }),
+      shell,
+    );
+    const child = spawn(file, args, { cwd, shell, windowsHide: true });
     let stderr = '';
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
     const exit = new Promise<number | null>((resolve, reject) => {

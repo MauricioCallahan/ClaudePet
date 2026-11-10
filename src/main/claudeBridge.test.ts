@@ -1,12 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { buildArgs, command, findClaude, parseLine } from './claudeBridge';
+import { buildArgs, command, findClaude, parseLine, PET_PROMPT, shellArgs, systemPrompt } from './claudeBridge';
 
 test('buildArgs resumes only with a well-formed session id', () => {
   const id = '730602b1-d89c-41bf-9f2d-54bc04302aef';
-  assert.deepEqual(buildArgs(id).slice(-2), ['--resume', id]);
-  for (const bad of [undefined, '', 'abc', `${id} & calc`, '--dangerously-skip-permissions']) assert.ok(!buildArgs(bad).includes('--resume'));
+  assert.deepEqual(buildArgs({ sessionId: id }).slice(-2), ['--resume', id]);
+  for (const bad of [undefined, '', 'abc', `${id} & calc`, '--dangerously-skip-permissions']) assert.ok(!buildArgs({ sessionId: bad }).includes('--resume'));
+});
+test('buildArgs turns off tools and the user setup in chat mode (the default) only', () => {
+  const chat = buildArgs();
+  assert.equal(chat[chat.indexOf('--tools') + 1], '');
+  assert.equal(chat[chat.indexOf('--setting-sources') + 1], '');
+  for (const flag of ['--strict-mcp-config', '--disable-slash-commands']) assert.ok(chat.includes(flag));
+  assert.deepEqual(buildArgs({ mode: 'chat' }), chat);
+  assert.ok(!buildArgs({ mode: 'code' }).includes('--tools'));
+});
+test('buildArgs passes the model from settings, or sonnet when it is missing or unsafe', () => {
+  const model = (m?: unknown) => {
+    const a = buildArgs({ model: m });
+    return a[a.indexOf('--model') + 1];
+  };
+  for (const ok of ['opus', 'claude-sonnet-5-5', 'opus[1m]', 'claude-3.5-haiku']) assert.equal(model(ok), ok);
+  for (const bad of [undefined, '', 5, 'x & calc', '--dangerously-skip-permissions', 'a b', 'opus"']) assert.equal(model(bad), 'sonnet');
+});
+test('buildArgs passes the pet prompt file in chat mode only', () => {
+  const file = path.join('..', 'system-prompt.md');
+  assert.deepEqual(buildArgs({ promptFile: file }).slice(-2), ['--system-prompt-file', file]);
+  assert.ok(!buildArgs({ mode: 'code', promptFile: file }).includes('--system-prompt-file'));
+});
+test('systemPrompt adds the custom instructions after the pet prompt, and skips a blank file', () => {
+  assert.equal(systemPrompt(), PET_PROMPT);
+  assert.equal(systemPrompt('  \n '), PET_PROMPT);
+  const p = systemPrompt('  Answer in Spanish.\n');
+  assert.ok(p.startsWith(PET_PROMPT) && p.endsWith('\n\nAnswer in Spanish.'));
+});
+test('shellArgs quotes empty values only when going through a shell', () => {
+  assert.deepEqual(shellArgs(['--tools', '', '-p'], true), ['--tools', '""', '-p']);
+  assert.deepEqual(shellArgs(['--tools', ''], false), ['--tools', '']);
 });
 
 const only = (...files: string[]) => (f: string) => files.includes(f);
@@ -57,6 +88,15 @@ test('parseLine: an error result carries the message and no session id', () => {
   const line = '{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Please run /login","session_id":"730602b1-d89c-41bf-9f2d-54bc04302aef"}';
   assert.deepEqual(parseLine(line), { error: 'Invalid API key · Please run /login' });
   assert.deepEqual(parseLine('{"type":"result","subtype":"error_during_execution","is_error":true}'), { error: 'Claude Code reported an error.' });
+});
+test('parseLine: a denied tool ends the reply with an error, even though the result says success', () => {
+  // Recorded from claude 2.1.321 with --permission-prompts none (usage and other fields trimmed).
+  const line = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'The command was blocked.', session_id: '6c0baf1c-cc0a-4f43-8d71-1194d5c4a136', permission_denials: [{ tool_name: 'Bash', tool_use_id: 'toolu_01', tool_input: { command: 'echo hi > x.txt' } }] });
+  assert.deepEqual(parseLine(line), { error: 'Claude Code asked to use Bash, but tools are off in pet chats.' });
+  assert.deepEqual(parseLine(JSON.stringify({ type: 'result', is_error: false, permission_denials: [], session_id: 's' })), { sessionId: 's' });
+});
+test('buildArgs never lets a permission prompt wait for an answer, in any mode', () => {
+  for (const mode of ['chat', 'code'] as const) assert.equal(buildArgs({ mode }).join(' ').includes('--permission-prompts none'), true);
 });
 test('parseLine: truncated or non-JSON lines are ignored, not thrown', () => {
   for (const line of [delta('cut off').slice(0, 60), '', 'Warning: something on stdout', 'null', '5', '"text"']) assert.equal(parseLine(line), null);

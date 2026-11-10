@@ -114,6 +114,18 @@ const bridge: Bridge =
             saveChats(chats);
           },
         },
+        mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
+        model: () => loadSettings().model,
+        instructions: () => {
+          try {
+            return fs.readFileSync(path.join(app.getPath('userData'), 'instructions.md'), 'utf8');
+          } catch (err) {
+            // No file means no custom instructions; any other error (locked, a folder) ends the reply with its message.
+            if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+            throw new Error(`Could not read your instructions.md: ${(err as Error).message}`);
+          }
+        },
+        promptFile: path.join(app.getPath('userData'), 'system-prompt.md'),
       });
 let inflight: AbortController | null = null;
 

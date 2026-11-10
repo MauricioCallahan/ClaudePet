@@ -14,6 +14,17 @@ process.stdin.on('end', () => {
     setInterval(() => {}, 1000); // never finishes: only Stop or Quit ends it
     return;
   }
+  if (prompt.startsWith('/args')) {
+    // In a code block so Markdown leaves the backslashes alone; lets a spec check exactly how the bridge started us.
+    say('```\n' + JSON.stringify({ args, cwd: process.cwd() }) + '\n```');
+    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id });
+    return;
+  }
+  if (prompt.startsWith('/deny')) {
+    say('I need to run a command.');
+    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: 'Bash' }] });
+    return;
+  }
   if (prompt.startsWith('/fail')) {
     process.stderr.write('fake claude failed\n');
     process.exit(1);

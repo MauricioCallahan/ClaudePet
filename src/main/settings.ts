@@ -6,6 +6,7 @@ export interface Settings {
   x?: number;
   y?: number;
   hotkey?: string; // Electron accelerator, default CommandOrControl+,
+  model?: string; // Claude Code model alias or full id, default sonnet (picker UI in v0.2)
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

@@ -39,6 +39,7 @@ process.stdin.on('end', () => {
   }
   // Offline while the FAKE_OFFLINE_FILE exists: retries that get no response, forever, like claude without network.
   if (prompt.startsWith('/offline') && process.env.FAKE_OFFLINE_FILE && fs.existsSync(process.env.FAKE_OFFLINE_FILE)) {
+    say('partial '); // cut off mid-reply, the case where Retry once stored the message twice
     for (let attempt = 1; attempt <= 3; attempt++) out({ type: 'system', subtype: 'api_retry', attempt, max_retries: 10, retry_delay_ms: 500, error_status: null, error: 'unknown', session_id });
     setInterval(() => {}, 1000);
     return;

@@ -69,6 +69,9 @@ test('going offline shows the network error, and Retry works once back online', 
   await expect(lastReply()).toContainText(`: /offline ${SECRET}`);
   await expect(page.locator('button.retry')).toHaveCount(0);
   await expect(page.locator('#messages .msg.user')).toHaveCount(4); // Retry did not add a second copy of the message
+  const [chat] = JSON.parse(fs.readFileSync(path.join(profile, 'chats.json'), 'utf8'));
+  const stored = JSON.parse(fs.readFileSync(path.join(profile, 'chats', `${chat.id}.json`), 'utf8'));
+  expect(stored.filter((m: { text: string }) => m.text === `/offline ${SECRET}`)).toHaveLength(1); // nor in the store
 });
 
 test('no output for the idle time ends the reply with a timeout and Retry', async () => {

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { loadChats, recent, saveChats, setSession, upsert, type Chat } from './chats';
+import { deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -99,6 +99,7 @@ function showAndSend(channel: string, ...args: unknown[]): void {
 
 let chats: Chat[] = [];
 
+const workspace = path.join(app.getPath('userData'), 'workspace'); // the cwd of every claude process
 const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
@@ -106,7 +107,7 @@ const bridge: Bridge =
     ? new FakeBridge()
     : new ClaudeBridge({
         exe: claudePath,
-        cwd: path.join(app.getPath('userData'), 'workspace'),
+        cwd: workspace,
         sessions: {
           get: (id) => chats.find((c) => c.id === id)?.sessionId,
           set: (id, sessionId) => {
@@ -131,6 +132,8 @@ const bridge: Bridge =
         idleMs: Number(process.env.CLAUDEPET_IDLE_MS) || 15 * 60_000,
       });
 let inflight: AbortController | null = null;
+let replyChat = ''; // the chat the running reply belongs to
+let running: Promise<void> = Promise.resolve(); // the current runReply, so a reopen can wait for its save
 
 // shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
 function logError(e: BridgeError): void {
@@ -145,11 +148,16 @@ function logError(e: BridgeError): void {
 async function runReply(id: string, text: string): Promise<void> {
   const ac = new AbortController();
   inflight = ac;
+  replyChat = id;
   refreshTray();
   const send = (channel: string, ...args: unknown[]) => win?.webContents.send(channel, ...args);
   send('reply:start');
+  let reply = '';
   try {
-    for await (const chunk of bridge.send(id, text, ac.signal)) send('reply:chunk', chunk);
+    for await (const chunk of bridge.send(id, text, ac.signal)) {
+      reply += chunk;
+      send('reply:chunk', chunk);
+    }
     send('reply:end');
   } catch (err) {
     // Stop and New chat abort on purpose: that is an ordinary end, not an error.
@@ -160,8 +168,43 @@ async function runReply(id: string, text: string): Promise<void> {
       logError(e);
     }
   } finally {
+    // Keep what streamed, even when Stop or an error cut it short; a chat deleted meanwhile stays deleted.
+    if (reply && chats.some((c) => c.id === id)) saveMessages(id, [...loadMessages(id), { role: 'claude', text: reply, at: Date.now() }]);
     inflight = null;
     refreshTray();
+  }
+}
+
+// Shared by the tray's Recent chats and the chat list. Switching chats ends the running reply,
+// and waits for it to be saved, so a reopened chat shows it and it cannot stream into the wrong chat.
+async function openChat(id: string): Promise<void> {
+  inflight?.abort();
+  await running;
+  showAndSend('chat:open', id);
+}
+
+// Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
+async function deleteChat(id: string): Promise<void> {
+  // Only this chat's own reply is stopped and waited for (its save must not bring the messages back).
+  if (inflight && replyChat === id) {
+    inflight.abort();
+    await running;
+  }
+  const chat = chats.find((c) => c.id === id);
+  if (!chat) return;
+  chats = chats.filter((c) => c !== chat);
+  saveChats(chats);
+  refreshTray();
+  win?.webContents.send('chat:deleted', id);
+  try {
+    deleteMessages(id);
+    const transcript = chat.sessionId && transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, chat.sessionId);
+    if (transcript) {
+      fs.rmSync(transcript, { force: true });
+      fs.rmSync(transcript.slice(0, -'.jsonl'.length), { recursive: true, force: true }); // the session's side folder, if any
+    }
+  } catch (err) {
+    console.error(`Could not delete the files of chat ${id}:`, err);
   }
 }
 
@@ -210,9 +253,8 @@ if (!app.requestSingleInstanceLock()) {
     else void readVersion(claude).then((v) => console.log(`Claude Code: ${claude} (${v ?? 'unknown version'})`));
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
-    ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
-      if (typeof id !== 'string' || typeof text !== 'string') return;
-      if (id.length > 100) return;
+    ipcMain.on('chat:message', (_e, id: unknown, text: unknown, retry: unknown) => {
+      if (!isChatId(id) || typeof text !== 'string') return;
       if (text.length > MAX_MESSAGE_LENGTH) {
         // The renderer is already waiting on a reply; without this it would stay on Stop forever.
         const error: ReplyError = { case: 'unknown', message: `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).` };
@@ -220,15 +262,37 @@ if (!app.requestSingleInstanceLock()) {
         return;
       }
       if (inflight) return; // one reply at a time; the renderer swaps Send for Stop
-      chats = upsert(chats, id, text, Date.now());
+      const now = Date.now();
+      chats = upsert(chats, id, text, now);
       saveChats(chats);
+      if (retry !== true) saveMessages(id, [...loadMessages(id), { role: 'user', text, at: now }]); // a Retry's message is already stored
       refreshTray();
-      void runReply(id, text);
+      running = runReply(id, text);
     });
     ipcMain.on('clipboard:write', (_e, text: unknown) => {
       if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
+    ipcMain.on('chat:open', (_e, id: unknown) => {
+      if (isChatId(id)) void openChat(id);
+    });
+    ipcMain.on('chat:rename', (_e, id: unknown, title: unknown) => {
+      if (!isChatId(id) || typeof title !== 'string') return;
+      chats = rename(chats, id, title);
+      saveChats(chats);
+      refreshTray();
+    });
+    ipcMain.on('chat:delete', (_e, id: unknown) => {
+      if (isChatId(id)) void deleteChat(id);
+    });
+    ipcMain.handle('chat:load', (_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
+    ipcMain.handle('chats:list', async (_e, query: unknown) => {
+      const q = typeof query === 'string' ? query.slice(0, 200) : '';
+      const all = recent(chats, Infinity);
+      // shortcut: reads every chat file on each search; keep messages in memory if the list gets slow
+      const hits = q.trim() ? (await Promise.all(all.map(async (c) => matches(c, await readMessages(c.id), q)))).flatMap((ok, i) => (ok ? [all[i]] : [])) : all;
+      return hits.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }));
+    });
     createWindow();
     createTray({
       toggle: toggleWindow,
@@ -240,10 +304,7 @@ if (!app.requestSingleInstanceLock()) {
         showAndSend('chat:new');
       },
       recent: () => recent(chats),
-      openChat: (id) => {
-        inflight?.abort();
-        showAndSend('chat:open', id);
-      },
+      openChat: (id) => void openChat(id),
     });
     const { hotkey: saved } = loadSettings();
     registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);

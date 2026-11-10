@@ -26,7 +26,7 @@ Then open the **Chats** tray menu, choose **Pet → Refresh pets**, and pick the
 
 ## Pet format
 
-ClaudePet pets use the same package format as Codex Pets, so a Codex pet folder or zip (for example Crosspost Buddy) works as is.
+ClaudePet pets use the same package format as Codex Pets, so a Codex pet folder or zip works as is.
 
 ### Layout
 
@@ -45,10 +45,10 @@ Built-in pets live in `assets/pets/`, installed pets in `%APPDATA%\ClaudePet\pet
 
 ```json
 {
-  "id": "crosspost-buddy",
-  "displayName": "Crosspost Buddy",
-  "description": "A cool little robot mascot with sunglasses.",
-  "spritesheetPath": "spritesheet.webp"
+  "id": "pip",
+  "displayName": "Pip",
+  "description": "A round little blob that keeps you company while you chat with Claude.",
+  "spritesheetPath": "spritesheet.png"
 }
 ```
 

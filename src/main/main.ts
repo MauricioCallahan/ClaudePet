@@ -10,8 +10,8 @@ import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
 import { createPet } from './petWindow';
-import { loadPet, type Pet } from './petFormat';
-import { builtInPetsDir, ensurePetsDir, userPetsDir } from './pets';
+import type { Pet } from './petFormat';
+import { ensurePetsDir, scanPets, type ListedPet } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -186,18 +186,11 @@ async function openChat(id: string): Promise<void> {
   showAndSend('chat:open', id);
 }
 
-function tryLoadPet(dir: string): Pet | undefined {
-  try {
-    return loadPet(dir);
-  } catch (err) {
-    console.error(`Pet in ${dir} not loaded:`, (err as Error).message);
-  }
-}
+let pets: ListedPet[] = [];
 
-// shortcut: no Codex folder and no fallback reason yet; M2.5-3.3 and 3.5 replace this with listPets and pickPet
+// shortcut: no logged reason for the fallback yet; M2.5-3.5 replaces this with pickPet
 function choosePet(id: string): Pet | undefined {
-  const builtIn = path.join(builtInPetsDir, id);
-  return tryLoadPet(fs.existsSync(builtIn) ? builtIn : path.join(userPetsDir(), id)) ?? tryLoadPet(path.join(builtInPetsDir, DEFAULT_PET_ID));
+  return pets.find((p) => p.manifest.id === id) ?? pets.find((p) => p.manifest.id === DEFAULT_PET_ID);
 }
 
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
@@ -313,6 +306,7 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
     ensurePetsDir();
+    pets = scanPets();
     const petSetting = petSettings(loadSettings());
     if (petSetting.enabled) win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, choosePet(petSetting.id)));
     createTray({

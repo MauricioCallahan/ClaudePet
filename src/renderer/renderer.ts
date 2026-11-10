@@ -215,7 +215,6 @@ async function renderList(): Promise<void> {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'open';
-    row.dataset.id = c.id;
     const title = document.createElement('span');
     title.className = 'title';
     title.textContent = c.title; // titles come from user text: never innerHTML
@@ -239,7 +238,6 @@ search.addEventListener('input', () => {
   clearTimeout(searchTimer);
   searchTimer = window.setTimeout(() => void renderList(), 150); // one search per pause in typing, not per key
 });
-// Opening goes through main, the same path as the tray's Recent chats.
 function button(className: string, text: string, label = text): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
@@ -249,6 +247,7 @@ function button(className: string, text: string, label = text): HTMLButtonElemen
   return b;
 }
 // Rename and delete swap the row's content in place; any re-render puts the normal row back.
+// Opening goes through main, the same path as the tray's Recent chats.
 chatList.addEventListener('click', (e) => {
   const action = (e.target as HTMLElement).closest('button')?.className;
   const li = (e.target as HTMLElement).closest('li');

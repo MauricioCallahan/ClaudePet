@@ -62,3 +62,14 @@ test('the model comes from settings, defaults to sonnet, and a change applies to
   fs.writeFileSync(file, JSON.stringify({ ...settings, model: 'opus' }));
   expect(model((await started()).args)).toBe('opus');
 });
+
+test('chat mode replaces the coding prompt with the pet prompt plus the custom instructions file', async () => {
+  fs.writeFileSync(path.join(profile, 'instructions.md'), 'Always end with a paw print.');
+  const { args, cwd } = await started();
+  const file = args[args.indexOf('--system-prompt-file') + 1];
+  expect(path.isAbsolute(file)).toBe(false); // the shell command line must not depend on the profile path
+  const prompt = fs.readFileSync(path.resolve(cwd, file), 'utf8');
+  expect(prompt).toContain('ClaudePet');
+  expect(prompt).toContain('Always end with a paw print.');
+  expect(fs.readdirSync(cwd)).toEqual([]);
+});

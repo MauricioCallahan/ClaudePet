@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { buildArgs, command, findClaude, parseLine, shellArgs } from './claudeBridge';
+import { buildArgs, command, findClaude, parseLine, PET_PROMPT, shellArgs, systemPrompt } from './claudeBridge';
 
 test('buildArgs resumes only with a well-formed session id', () => {
   const id = '730602b1-d89c-41bf-9f2d-54bc04302aef';
@@ -23,6 +23,17 @@ test('buildArgs passes the model from settings, or sonnet when it is missing or 
   };
   for (const ok of ['opus', 'claude-sonnet-5-5', 'opus[1m]', 'claude-3.5-haiku']) assert.equal(model(ok), ok);
   for (const bad of [undefined, '', 5, 'x & calc', '--dangerously-skip-permissions', 'a b', 'opus"']) assert.equal(model(bad), 'sonnet');
+});
+test('buildArgs passes the pet prompt file in chat mode only', () => {
+  const file = path.join('..', 'system-prompt.md');
+  assert.deepEqual(buildArgs({ promptFile: file }).slice(-2), ['--system-prompt-file', file]);
+  assert.ok(!buildArgs({ mode: 'code', promptFile: file }).includes('--system-prompt-file'));
+});
+test('systemPrompt adds the custom instructions after the pet prompt, and skips a blank file', () => {
+  assert.equal(systemPrompt(), PET_PROMPT);
+  assert.equal(systemPrompt('  \n '), PET_PROMPT);
+  const p = systemPrompt('  Answer in Spanish.\n');
+  assert.ok(p.startsWith(PET_PROMPT) && p.endsWith('\n\nAnswer in Spanish.'));
 });
 test('shellArgs quotes empty values only when going through a shell', () => {
   assert.deepEqual(shellArgs(['--tools', '', '-p'], true), ['--tools', '""', '-p']);

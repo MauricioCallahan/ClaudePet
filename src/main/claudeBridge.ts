@@ -84,6 +84,21 @@ export interface ClaudeBridgeOptions {
   sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string): void };
   mode: (chatId: string) => Mode;
   model: () => unknown; // read on every send, so a settings change applies to the next message
+  instructions: () => string | undefined; // the user's own custom instructions file, if any
+  promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
+}
+
+// Replaces Claude Code's coding prompt in chat mode. Claude Code keeps a chat's first prompt, so edits apply to new chats.
+export const PET_PROMPT = [
+  "You are ClaudePet, a friendly companion in a small chat box on the user's Windows desktop.",
+  'Keep replies short and easy to read in a narrow window: a few sentences or a short list, longer only when asked.',
+  'Markdown works (lists, code blocks, links); avoid wide tables and large headings.',
+  'You have no tools in this chat: you cannot read files, run commands or browse the web, so say so plainly when asked.',
+].join(' ');
+
+export function systemPrompt(custom?: string): string {
+  const own = custom?.trim();
+  return own ? `${PET_PROMPT}\n\nThe user's own instructions:\n\n${own}` : PET_PROMPT;
 }
 
 // The session id becomes a command-line argument, so only a plain UUID is ever passed on.
@@ -97,12 +112,14 @@ const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config'
 const MODEL = /^[A-Za-z0-9][\w.\-[\]]*$/;
 const DEFAULT_MODEL = 'sonnet';
 
-export function buildArgs({ mode = 'chat', sessionId, model }: { mode?: Mode; sessionId?: string; model?: unknown } = {}): string[] {
+// promptFile is relative to cwd: an absolute path could hold spaces (a username), which break the shell command line.
+export function buildArgs({ mode = 'chat', sessionId, model, promptFile }: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string } = {}): string[] {
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
   // --permission-prompts none: the process is hidden, so anything that would ask for permission is denied, never left waiting.
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompts', 'none'];
   args.push('--model', typeof model === 'string' && MODEL.test(model) ? model : DEFAULT_MODEL);
   if (mode === 'chat') args.push(...CHAT_ONLY);
+  if (mode === 'chat' && promptFile) args.push('--system-prompt-file', promptFile);
   if (sessionId && UUID.test(sessionId)) args.push('--resume', sessionId);
   return args;
 }
@@ -116,9 +133,15 @@ export class ClaudeBridge implements Bridge {
     const exe = this.opts.exe();
     if (!exe) throw new Error('Claude Code is not installed.');
     const { file, shell } = command(exe);
-    const args = shellArgs(buildArgs({ mode: this.opts.mode(chatId), sessionId: this.opts.sessions.get(chatId), model: this.opts.model() }), shell);
-    fs.mkdirSync(this.opts.cwd, { recursive: true });
-    const child = spawn(file, args, { cwd: this.opts.cwd, shell, windowsHide: true });
+    const { cwd, promptFile } = this.opts;
+    const mode = this.opts.mode(chatId);
+    fs.mkdirSync(cwd, { recursive: true });
+    if (mode === 'chat') fs.writeFileSync(promptFile, systemPrompt(this.opts.instructions()));
+    const args = shellArgs(
+      buildArgs({ mode, sessionId: this.opts.sessions.get(chatId), model: this.opts.model(), promptFile: path.relative(cwd, promptFile) }),
+      shell,
+    );
+    const child = spawn(file, args, { cwd, shell, windowsHide: true });
     let stderr = '';
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
     const exit = new Promise<number | null>((resolve, reject) => {

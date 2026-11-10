@@ -116,6 +116,14 @@ const bridge: Bridge =
         },
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
         model: () => loadSettings().model,
+        instructions: () => {
+          try {
+            return fs.readFileSync(path.join(app.getPath('userData'), 'instructions.md'), 'utf8');
+          } catch {
+            return undefined; // no custom instructions file
+          }
+        },
+        promptFile: path.join(app.getPath('userData'), 'system-prompt.md'),
       });
 let inflight: AbortController | null = null;
 

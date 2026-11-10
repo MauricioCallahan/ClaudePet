@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitPosition } from './bounds';
+import { fitPosition, petPosition } from './bounds';
 
 const size = { width: 360, height: 480 };
 const main = { x: 0, y: 0, width: 1920, height: 1040 };
@@ -17,4 +17,12 @@ test('keeps a position on a second monitor that exists', () => {
 });
 test('falls back when that second monitor is gone', () => {
   assert.deepEqual(fitPosition({ x: -1000, y: 50 }, size, [main], main), { x: 1544, y: 544 });
+});
+
+const pet = { width: 96, height: 104 };
+test('the pet stands centered on the box top edge', () => {
+  assert.deepEqual(petPosition({ x: 500, y: 300, ...size }, pet, main), { x: 632, y: 196 });
+});
+test('the pet is rounded to whole pixels', () => {
+  assert.deepEqual(petPosition({ x: 500, y: 300, width: 361, height: 480 }, pet, main), { x: 633, y: 196 });
 });

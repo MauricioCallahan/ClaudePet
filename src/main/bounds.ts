@@ -22,3 +22,12 @@ export function fitPosition(
     y: primary.y + primary.height - size.height - MARGIN,
   };
 }
+
+// The pet stands centered on the box's top edge; clamped so a box dragged past an edge never hides it.
+export function petPosition(box: Rect, pet: { width: number; height: number }, area: Rect): { x: number; y: number } {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+  return {
+    x: clamp(Math.round(box.x + (box.width - pet.width) / 2), area.x, area.x + area.width - pet.width),
+    y: clamp(box.y - pet.height, area.y, area.y + area.height - pet.height),
+  };
+}

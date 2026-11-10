@@ -9,6 +9,7 @@ import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
+import { createPet } from './petWindow';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -294,6 +295,8 @@ if (!app.requestSingleInstanceLock()) {
       return hits.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }));
     });
     createWindow();
+    // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
+    win?.webContents.once('did-finish-load', () => win && createPet(win));
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),

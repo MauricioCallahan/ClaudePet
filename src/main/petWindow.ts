@@ -16,8 +16,8 @@ function place(box: BrowserWindow): void {
 // Runs before main's debounced save, so the saved spot is the snapped one.
 function makeRoom(box: BrowserWindow): void {
   const b = box.getBounds();
-  const { x, y } = roomForPet(b, SIZE.height, screen.getDisplayMatching(b).workArea);
-  if (y !== b.y) box.setPosition(x, y);
+  const r = roomForPet(b, SIZE.height, screen.getDisplayMatching(b).workArea);
+  if (r.y !== b.y) box.setBounds(r);
 }
 
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.

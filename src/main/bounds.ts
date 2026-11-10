@@ -33,6 +33,8 @@ export function petPosition(box: Rect, pet: { width: number; height: number }, a
 }
 
 // Where the box must go so the pet standing on it fits below the top of the screen.
-export function roomForPet(box: Rect, petHeight: number, area: Rect): { x: number; y: number } {
-  return { x: box.x, y: Math.max(box.y, area.y + petHeight) };
+// A box too tall for what is left shrinks, so its input never ends up below the screen.
+export function roomForPet(box: Rect, petHeight: number, area: Rect): Rect {
+  const y = Math.max(box.y, area.y + petHeight);
+  return { x: box.x, y, width: box.width, height: y === box.y ? box.height : Math.min(box.height, area.y + area.height - y) };
 }

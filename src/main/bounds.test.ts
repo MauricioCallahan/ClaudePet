@@ -27,7 +27,7 @@ test('the pet is rounded to whole pixels', () => {
   assert.deepEqual(petPosition({ x: 500, y: 300, width: 361, height: 480 }, pet, main), { x: 633, y: 196 });
 });
 test('a box too close to the top moves down to make room for the pet', () => {
-  assert.deepEqual(roomForPet({ x: 500, y: 20, ...size }, 104, main), { x: 500, y: 104 });
+  assert.deepEqual(roomForPet({ x: 500, y: 20, ...size }, 104, main), { x: 500, y: 104, ...size });
 });
 test('the pet stays on screen when the box is dragged high', () => {
   assert.deepEqual(petPosition({ x: 500, y: 50, ...size }, pet, main), { x: 632, y: 0 });
@@ -40,9 +40,12 @@ test('the pet follows the box onto a second monitor at negative coordinates', ()
   assert.deepEqual(petPosition({ x: -1000, y: 300, ...size }, pet, left), { x: -868, y: 196 });
   const above = { x: 0, y: -1080, width: 1920, height: 1040 };
   assert.deepEqual(petPosition({ x: 500, y: -1060, ...size }, pet, above), { x: 632, y: -1080 });
-  assert.deepEqual(roomForPet({ x: 500, y: -1060, ...size }, 104, above), { x: 500, y: -976 });
+  assert.deepEqual(roomForPet({ x: 500, y: -1060, ...size }, 104, above), { x: 500, y: -976, ...size });
 });
 test('a box with room for the pet stays where it is', () => {
-  assert.deepEqual(roomForPet({ x: 500, y: 104, ...size }, 104, main), { x: 500, y: 104 });
-  assert.deepEqual(roomForPet({ x: -1000, y: 300, ...size }, 104, left), { x: -1000, y: 300 });
+  assert.deepEqual(roomForPet({ x: 500, y: 104, ...size }, 104, main), { x: 500, y: 104, ...size });
+  assert.deepEqual(roomForPet({ x: -1000, y: 300, ...size }, 104, left), { x: -1000, y: 300, ...size });
+});
+test('a box too tall for the room left under the pet shrinks to fit the screen', () => {
+  assert.deepEqual(roomForPet({ x: 0, y: 0, width: 1920, height: 1040 }, 104, main), { x: 0, y: 104, width: 1920, height: 936 });
 });

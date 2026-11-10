@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import { petPosition, roomForPet } from './bounds';
 
@@ -21,7 +21,7 @@ function makeRoom(box: BrowserWindow): void {
 }
 
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
-export function createPet(box: BrowserWindow): void {
+export function createPet(box: BrowserWindow, onClick: () => void): void {
   pet = new BrowserWindow({
     ...SIZE,
     show: false,
@@ -46,7 +46,18 @@ export function createPet(box: BrowserWindow): void {
   box.on('resize', () => place(box));
   box.on('moved', () => makeRoom(box));
   box.on('resized', () => makeRoom(box));
+  // The pet is shown and hidden with the box (Show/Hide, hotkey, ×), and never on its own.
+  box.on('show', () => {
+    place(box);
+    pet?.showInactive();
+  });
+  box.on('hide', () => pet?.hide());
+  // Quit closes every window by itself, the pet included; this only drops the dead reference.
+  pet.on('closed', () => (pet = null));
   pet.once('ready-to-show', () => {
     if (box.isVisible()) pet?.showInactive();
+  });
+  ipcMain.on('pet:click', (e) => {
+    if (e.sender === pet?.webContents) onClick();
   });
 }

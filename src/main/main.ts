@@ -296,7 +296,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     createWindow();
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
-    win?.webContents.once('did-finish-load', () => win && createPet(win));
+    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow));
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),

@@ -13,7 +13,7 @@ import { pathToFileURL } from 'node:url';
 import { createPet, setPet, setPetEnabled } from './petWindow';
 import { COLUMNS, type Pet } from './petFormat';
 import { initPicker, openPicker, pickerChanged, type PickerItem } from './pickerWindow';
-import { ensurePetsDir, scanPets, type ListedPet } from './pets';
+import { ensurePetsDir, pickPet, scanPets, type PetScan } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -188,13 +188,23 @@ async function openChat(id: string): Promise<void> {
   showAndSend('chat:open', id);
 }
 
-let pets: ListedPet[] = [];
+let petScan: PetScan = { pets: [], skipped: [] };
 let petSetting = { enabled: true, id: DEFAULT_PET_ID };
 let shownPet: Pet | undefined;
 
-// shortcut: no logged reason for the fallback yet; M2.5-3.5 replaces this with pickPet
-function choosePet(id: string): Pet | undefined {
-  return pets.find((p) => p.manifest.id === id) ?? pets.find((p) => p.manifest.id === DEFAULT_PET_ID);
+// Shows pet.id, or the built-in pet with the reason in the log. Before the pet window exists this only picks.
+function showChosenPet(): void {
+  const { pet, reason } = pickPet(petScan, petSetting.id);
+  if (reason) console.error(reason);
+  shownPet = pet;
+  setPet(pet);
+}
+
+// Tray → Pet → Refresh pets: picks up pets added or removed since startup.
+export function refreshPets(): void {
+  petScan = scanPets();
+  showChosenPet();
+  pickerChanged();
 }
 
 // saveSettings merges only the top level, so the whole pet object is saved each time.
@@ -204,15 +214,13 @@ function savePetSetting(patch: Partial<typeof petSetting>): void {
 }
 
 const pickerItems = (): PickerItem[] =>
-  pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
+  petScan.pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
 
 // From the picker: only an id that is in the list (the picker's id is already checked to be a safe name).
 function choosePetById(id: string): void {
-  const p = pets.find((q) => q.manifest.id === id);
-  if (!p) return;
+  if (!petScan.pets.some((p) => p.manifest.id === id)) return;
   savePetSetting({ id });
-  shownPet = p;
-  setPet(p);
+  showChosenPet();
   pickerChanged();
 }
 
@@ -329,9 +337,9 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
     ensurePetsDir();
-    pets = scanPets();
+    petScan = scanPets();
     petSetting = petSettings(loadSettings());
-    shownPet = choosePet(petSetting.id);
+    showChosenPet();
     win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled));
     initPicker({ list: pickerItems, choose: choosePetById });
     createTray({
@@ -346,6 +354,7 @@ if (!app.requestSingleInstanceLock()) {
       recent: () => recent(chats),
       openChat: (id) => void openChat(id),
       choosePet: openPicker,
+      refreshPets,
       isPetHidden: () => !petSetting.enabled,
       togglePetHidden: () => {
         savePetSetting({ enabled: !petSetting.enabled });

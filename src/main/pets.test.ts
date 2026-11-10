@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadPet } from './petFormat';
-import { builtInPetsDir, codexPetsDir, listPets, type PetSource } from './pets';
+import { builtInPetsDir, codexPetsDir, listPets, pickPet, type PetSource } from './pets';
 import { DEFAULT_PET_ID } from './settings';
 
 test('the default built-in pet loads, with all 11 rows', () => {
@@ -113,5 +113,32 @@ test('listPets ignores loose files next to the pet folders', () => {
     addPet(dirs.user, 'ok');
     fs.writeFileSync(path.join(dirs.user, 'notes.txt'), 'hi');
     assert.deepEqual(ids(list(dirs)), ['user:ok']);
+  });
+});
+
+test('pickPet returns the chosen pet', () => {
+  withFolders((dirs) => {
+    addPet(dirs['built-in'], 'pip');
+    addPet(dirs.user, 'mine');
+    const r = pickPet(list(dirs), 'mine');
+    assert.equal(r.pet?.manifest.id, 'mine');
+    assert.equal(r.reason, undefined);
+  });
+});
+test('pickPet falls back to the built-in pet when the chosen one is not installed', () => {
+  withFolders((dirs) => {
+    addPet(dirs['built-in'], 'pip');
+    const r = pickPet(list(dirs), 'gone');
+    assert.equal(r.pet?.manifest.id, 'pip');
+    assert.equal(r.reason, 'Pet "gone" is not installed; showing "pip" instead');
+  });
+});
+test('pickPet falls back to the built-in pet and says why the chosen one is invalid', () => {
+  withFolders((dirs) => {
+    addPet(dirs['built-in'], 'pip');
+    addPet(dirs.user, 'broken-json', 'broken-json', 'broken-json');
+    const r = pickPet(list(dirs), 'broken-json');
+    assert.equal(r.pet?.manifest.id, 'pip');
+    assert.match(r.reason!, /^Pet "broken-json" is not valid \(pet.json is not valid JSON\); showing "pip" instead$/);
   });
 });

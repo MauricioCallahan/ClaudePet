@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadPet, type Pet } from './petFormat';
+import { DEFAULT_PET_ID } from './settings';
 
 // Installed pets, one folder per pet named after its id: %APPDATA%\ClaudePet\pets\<id>\.
 export const userPetsDir = () => path.join(app.getPath('userData'), 'pets');
@@ -24,11 +25,12 @@ export const codexPetsDir = (env: NodeJS.ProcessEnv, home: string) => path.join(
 
 export type PetSource = 'built-in' | 'user' | 'codex';
 export type ListedPet = Pet & { source: PetSource };
+export type PetScan = { pets: ListedPet[]; skipped: { dir: string; reason: string }[] };
 
 // Sources in priority order: the first copy of an id wins, so nothing replaces a built-in pet and ClaudePet's copy beats Codex's.
-export function listPets(sources: { dir: string; source: PetSource }[]): { pets: ListedPet[]; skipped: { dir: string; reason: string }[] } {
+export function listPets(sources: { dir: string; source: PetSource }[]): PetScan {
   const pets: ListedPet[] = [];
-  const skipped: { dir: string; reason: string }[] = [];
+  const skipped: PetScan['skipped'] = [];
   for (const { dir, source } of sources) {
     let names: string[];
     try {
@@ -55,12 +57,21 @@ export function listPets(sources: { dir: string; source: PetSource }[]): { pets:
 }
 
 // Every usable pet, built-in first; folders that aren't are logged with the reason.
-export function scanPets(): ListedPet[] {
-  const { pets, skipped } = listPets([
+export function scanPets(): PetScan {
+  const scan = listPets([
     { dir: builtInPetsDir, source: 'built-in' },
     { dir: userPetsDir(), source: 'user' },
     { dir: codexPetsDir(process.env, os.homedir()), source: 'codex' },
   ]);
-  for (const s of skipped) console.error(`Pet folder ${s.dir} skipped: ${s.reason}`);
-  return pets;
+  for (const s of scan.skipped) console.error(`Pet folder ${s.dir} skipped: ${s.reason}`);
+  return scan;
+}
+
+// The chosen pet, or the built-in default with the reason why. pet.id is never rewritten, so the pet returns if its folder does.
+export function pickPet({ pets, skipped }: PetScan, id: string): { pet: ListedPet | undefined; reason?: string } {
+  const chosen = pets.find((p) => p.manifest.id === id);
+  if (chosen) return { pet: chosen };
+  const bad = skipped.find((s) => path.basename(s.dir) === id);
+  const why = bad ? `is not valid (${bad.reason})` : 'is not installed';
+  return { pet: pets.find((p) => p.manifest.id === DEFAULT_PET_ID), reason: `Pet "${id}" ${why}; showing "${DEFAULT_PET_ID}" instead` };
 }

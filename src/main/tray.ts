@@ -12,6 +12,7 @@ export interface TrayActions {
   choosePet(): void;
   isPetHidden(): boolean;
   togglePetHidden(): void;
+  refreshPets(): void;
 }
 
 // Module-level so the Tray is not garbage-collected (the icon would vanish).
@@ -42,6 +43,8 @@ export function refreshTray(): void {
         submenu: [
           { label: 'Choose pet…', click: actions.choosePet },
           { label: 'Hide pet', type: 'checkbox', checked: actions.isPetHidden(), click: actions.togglePetHidden },
+          { type: 'separator' },
+          { label: 'Refresh pets', click: actions.refreshPets },
         ],
       },
       { type: 'separator' },

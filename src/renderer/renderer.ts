@@ -79,12 +79,15 @@ document.getElementById('close')!.addEventListener('click', () => window.close()
 // Sent by main on reply:error; link opens in the browser (via will-navigate), retry resends the last message.
 type ReplyError = { message: string; link?: string; retry?: boolean };
 
+type ChatSummary = { id: string; title: string; updatedAt: number };
+
 // Provided by the preload script.
 declare const pet: {
   onNewChat(cb: () => void): void;
   onOpenChat(cb: (id: string) => void): void;
   onFocusInput(cb: () => void): void;
   sendMessage(chatId: string, text: string): void;
+  listChats(): Promise<ChatSummary[]>;
   stopReply(): void;
   copyText(text: string): void;
   onReplyStart(cb: () => void): void;
@@ -174,6 +177,45 @@ pet.onReplyError((error) => {
     el.append(' ', button);
   }
   setState('error');
+});
+
+// The chat list takes the place of the conversation while it is open.
+const chatsButton = document.getElementById('chats-button')!;
+const chatsPanel = document.getElementById('chats')!;
+const chatList = document.getElementById('chat-list')!;
+async function showList(open: boolean): Promise<void> {
+  chatsPanel.hidden = !open;
+  messages.hidden = form.hidden = thinking.hidden = open;
+  chatsButton.setAttribute('aria-expanded', String(open));
+  if (!open) return input.focus();
+  const rows = (await pet.listChats()).map((c) => {
+    const li = document.createElement('li');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'open';
+    row.dataset.id = c.id;
+    const title = document.createElement('span');
+    title.className = 'title';
+    title.textContent = c.title; // titles come from user text: never innerHTML
+    const time = document.createElement('time');
+    time.dateTime = new Date(c.updatedAt).toISOString();
+    time.textContent = new Date(c.updatedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+    row.append(title, time);
+    li.append(row);
+    return li;
+  });
+  if (!rows.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = 'No chats yet.';
+    rows.push(li);
+  }
+  chatList.replaceChildren(...rows);
+  chatList.querySelector<HTMLElement>('button')?.focus();
+}
+chatsButton.addEventListener('click', () => void showList(chatsButton.getAttribute('aria-expanded') !== 'true'));
+chatsPanel.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') void showList(false);
 });
 
 // shortcut: reopening a chat switches the id but cannot restore messages, until M2 stores history

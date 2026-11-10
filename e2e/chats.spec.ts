@@ -47,3 +47,16 @@ test('messages are saved and survive a restart', async () => {
     ['claude', 'fresh: hello pancake'],
   ]);
 });
+
+const rows = () => page.locator('#chat-list .title');
+
+test('the chat list shows every chat, newest first', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('chat:new'));
+  await send('second chat');
+  await page.click('#chats-button');
+  await expect(rows()).toHaveText(['second chat', 'hello pancake']);
+  await expect(page.locator('#messages')).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#chats')).toBeHidden();
+  await expect(page.locator('#input')).toBeFocused();
+});

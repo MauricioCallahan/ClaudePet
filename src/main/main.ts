@@ -236,6 +236,7 @@ if (!app.requestSingleInstanceLock()) {
       if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
+    ipcMain.handle('chats:list', () => recent(chats, Infinity).map(({ id, title, updatedAt }) => ({ id, title, updatedAt })));
     createWindow();
     createTray({
       toggle: toggleWindow,

@@ -185,8 +185,11 @@ async function openChat(id: string): Promise<void> {
 
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
 async function deleteChat(id: string): Promise<void> {
-  if (inflight && replyChat === id) inflight.abort();
-  await running; // its save must not bring the messages back
+  // Only this chat's own reply is stopped and waited for (its save must not bring the messages back).
+  if (inflight && replyChat === id) {
+    inflight.abort();
+    await running;
+  }
   const chat = chats.find((c) => c.id === id);
   if (!chat) return;
   chats = chats.filter((c) => c !== chat);

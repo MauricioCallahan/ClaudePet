@@ -114,3 +114,17 @@ test('parseLine: lines that are not reply text are ignored', () => {
   ];
   for (const line of lines) assert.equal(parseLine(line), null);
 });
+test('parseLine: a rejected rate_limit_event gives the reset time; an allowed one is ignored', () => {
+  // Shape from claude 2.1.321 (other rate_limit_info fields trimmed).
+  const line = (status: string) => JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status, resetsAt: 1736985600, rateLimitType: 'five_hour' }, session_id: 's' });
+  assert.deepEqual(parseLine(line('rejected')), { resetsAt: 1736985600 });
+  assert.equal(parseLine(line('allowed')), null);
+  assert.equal(parseLine('{"type":"rate_limit_event","rate_limit_info":{"status":"rejected"}}'), null);
+});
+test('parseLine: an api_retry with no response means offline; one with a status is the API, not the network', () => {
+  // Shape from claude 2.1.321.
+  const retry = (error_status: number | null, attempt = 1) => JSON.stringify({ type: 'system', subtype: 'api_retry', attempt, max_retries: 10, retry_delay_ms: 500, error_status, error: 'unknown', session_id: 's' });
+  assert.deepEqual(parseLine(retry(null)), { offline: 1 });
+  assert.deepEqual(parseLine(retry(null, 3)), { offline: 3 }); // the attempt of this request, not a running total
+  assert.equal(parseLine(retry(529)), null);
+});

@@ -11,14 +11,26 @@ const input = document.getElementById('input') as HTMLTextAreaElement;
 const thinking = document.getElementById('thinking')!;
 const sendButton = document.getElementById('send')!;
 let chatId: string = crypto.randomUUID();
+let lastText = ''; // what Retry sends again
 
 // The UI is drawn from this one value; call setState instead of toggling elements.
 type State = 'idle' | 'thinking' | 'error';
 let state: State = 'idle';
+const THINKING = 'thinking…';
+const SLOW_MS = 60_000;
+let slow = 0;
+// Restarted by every chunk, so the note only shows while the reply is visibly stuck.
+function armSlow(): void {
+  clearTimeout(slow);
+  if (thinking.textContent !== THINKING) thinking.textContent = THINKING; // unchanged text must not be re-announced
+  slow = window.setTimeout(() => (thinking.textContent = 'Still working, this one is taking a while…'), SLOW_MS);
+}
 function setState(s: State): void {
   state = s;
+  clearTimeout(slow);
   // Stays in the page and only its text changes: screen readers announce text changes in a live region, not unhiding.
-  thinking.textContent = s === 'thinking' ? 'thinking…' : '';
+  if (s === 'thinking') armSlow();
+  else thinking.textContent = '';
   sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
 }
 
@@ -42,10 +54,16 @@ form.addEventListener('submit', (e) => {
   const text = input.value.trim();
   if (!text) return;
   addMessage(text, 'user');
-  pet.sendMessage(chatId, text);
+  send(text);
   input.value = '';
-  setState('thinking'); // main answers with reply:start/chunk/end
 });
+
+function send(text: string): void {
+  messages.querySelectorAll('button.retry').forEach((b) => b.remove()); // only the latest error can be retried
+  lastText = text;
+  pet.sendMessage(chatId, text);
+  setState('thinking'); // main answers with reply:start/chunk/end
+}
 
 // Enter sends, Shift+Enter inserts a newline.
 input.addEventListener('keydown', (e) => {
@@ -58,6 +76,9 @@ input.addEventListener('keydown', (e) => {
 // The main process turns close into hide-to-tray.
 document.getElementById('close')!.addEventListener('click', () => window.close());
 
+// Sent by main on reply:error; link opens in the browser (via will-navigate), retry resends the last message.
+type ReplyError = { message: string; link?: string; retry?: boolean };
+
 // Provided by the preload script.
 declare const pet: {
   onNewChat(cb: () => void): void;
@@ -69,12 +90,16 @@ declare const pet: {
   onReplyStart(cb: () => void): void;
   onReplyChunk(cb: (text: string) => void): void;
   onReplyEnd(cb: () => void): void;
-  onReplyError(cb: (message: string) => void): void;
+  onReplyError(cb: (error: ReplyError) => void): void;
 };
 
 // One listener for every Copy button, including ones created by later renders.
 messages.addEventListener('click', (e) => {
   const target = e.target as HTMLElement;
+  if (target.closest('button.retry')) {
+    send(lastText); // no new user bubble: the message is already on screen
+    return;
+  }
   const whole = target.closest<HTMLElement>('button.copy-reply'); // copies the reply's Markdown source
   const code = whole ? rawText.get(whole.parentElement!) ?? '' : codeToCopy(target);
   if (code === null) return;
@@ -123,6 +148,7 @@ function dropReply(): void {
 pet.onReplyStart(() => setState('thinking'));
 pet.onReplyChunk((text) => {
   pending += text;
+  if (state === 'thinking') armSlow();
   frame ||= requestAnimationFrame(flush);
 });
 pet.onReplyEnd(() => {
@@ -130,10 +156,23 @@ pet.onReplyEnd(() => {
   reply = null;
   setState('idle');
 });
-pet.onReplyError((message) => {
+pet.onReplyError((error) => {
   flush();
   reply = null;
-  addMessage(message, 'claude');
+  const el = addMessage(error.message, 'claude');
+  if (error.link) {
+    const a = document.createElement('a');
+    a.href = error.link;
+    a.textContent = error.link;
+    el.append(' ', a);
+  }
+  if (error.retry) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'retry';
+    button.textContent = 'Retry';
+    el.append(' ', button);
+  }
   setState('error');
 });
 

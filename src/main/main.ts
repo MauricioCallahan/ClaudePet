@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
 import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
+import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
@@ -126,8 +127,19 @@ const bridge: Bridge =
           }
         },
         promptFile: path.join(app.getPath('userData'), 'system-prompt.md'),
+        // Long, because Code mode (v0.3) runs tools that print nothing for minutes; e2e sets it short.
+        idleMs: Number(process.env.CLAUDEPET_IDLE_MS) || 15 * 60_000,
       });
 let inflight: AbortController | null = null;
+
+// shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
+function logError(e: BridgeError): void {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'bridge.log'), logLine(new Date(), e.info.case, e.code, e.detail));
+  } catch {
+    // a log that cannot be written must never break the reply
+  }
+}
 
 // Streams one reply to the renderer as reply:start, reply:chunk..., then reply:end or reply:error.
 async function runReply(id: string, text: string): Promise<void> {
@@ -142,7 +154,11 @@ async function runReply(id: string, text: string): Promise<void> {
   } catch (err) {
     // Stop and New chat abort on purpose: that is an ordinary end, not an error.
     if (ac.signal.aborted) send('reply:end');
-    else send('reply:error', err instanceof Error ? err.message : String(err));
+    else {
+      const e = err instanceof BridgeError ? err : new BridgeError({ case: 'unknown', message: err instanceof Error ? err.message : String(err) });
+      send('reply:error', e.info);
+      logError(e);
+    }
   } finally {
     inflight = null;
     refreshTray();
@@ -199,7 +215,8 @@ if (!app.requestSingleInstanceLock()) {
       if (id.length > 100) return;
       if (text.length > MAX_MESSAGE_LENGTH) {
         // The renderer is already waiting on a reply; without this it would stay on Stop forever.
-        win?.webContents.send('reply:error', `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).`);
+        const error: ReplyError = { case: 'unknown', message: `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).` };
+        win?.webContents.send('reply:error', error);
         return;
       }
       if (inflight) return; // one reply at a time; the renderer swaps Send for Stop

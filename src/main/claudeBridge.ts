@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge } from './bridge';
+import type { Mode } from './chats';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
 export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boolean, home: string): string | undefined {
@@ -19,6 +20,11 @@ export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boo
 export function command(exe: string): { file: string; shell: boolean } {
   const shell = /\.(cmd|bat)$/i.test(exe);
   return { file: shell ? `"${exe}"` : exe, shell };
+}
+
+// Through a shell the args are joined with spaces, so an empty value would vanish and the flag would take the next one.
+export function shellArgs(args: string[], shell: boolean): string[] {
+  return shell ? args.map((a) => (a === '' ? '""' : a)) : args;
 }
 
 export function readVersion(exe: string): Promise<string | undefined> {
@@ -70,15 +76,22 @@ export interface ClaudeBridgeOptions {
   exe: () => string | undefined;
   cwd: string; // Claude Code keeps sessions per folder, so this must not change between runs
   sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string): void };
+  mode: (chatId: string) => Mode;
 }
 
 // The session id becomes a command-line argument, so only a plain UUID is ever passed on.
 const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
-export function buildArgs(sessionId?: string): string[] {
+// Chat mode: no tools, and none of the user's own settings, hooks, plugins, connectors or skills.
+// Not --bare: it never reads the Pro login.
+const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands'];
+
+export function buildArgs({ mode = 'chat', sessionId }: { mode?: Mode; sessionId?: string } = {}): string[] {
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
-  return sessionId && UUID.test(sessionId) ? [...args, '--resume', sessionId] : args;
+  if (mode === 'chat') args.push(...CHAT_ONLY);
+  if (sessionId && UUID.test(sessionId)) args.push('--resume', sessionId);
+  return args;
 }
 
 // Runs the claude CLI once per message and streams its reply.
@@ -90,7 +103,7 @@ export class ClaudeBridge implements Bridge {
     const exe = this.opts.exe();
     if (!exe) throw new Error('Claude Code is not installed.');
     const { file, shell } = command(exe);
-    const args = buildArgs(this.opts.sessions.get(chatId));
+    const args = shellArgs(buildArgs({ mode: this.opts.mode(chatId), sessionId: this.opts.sessions.get(chatId) }), shell);
     fs.mkdirSync(this.opts.cwd, { recursive: true });
     const child = spawn(file, args, { cwd: this.opts.cwd, shell, windowsHide: true });
     let stderr = '';

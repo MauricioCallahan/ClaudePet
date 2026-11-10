@@ -1,12 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { buildArgs, command, findClaude, parseLine } from './claudeBridge';
+import { buildArgs, command, findClaude, parseLine, shellArgs } from './claudeBridge';
 
 test('buildArgs resumes only with a well-formed session id', () => {
   const id = '730602b1-d89c-41bf-9f2d-54bc04302aef';
-  assert.deepEqual(buildArgs(id).slice(-2), ['--resume', id]);
-  for (const bad of [undefined, '', 'abc', `${id} & calc`, '--dangerously-skip-permissions']) assert.ok(!buildArgs(bad).includes('--resume'));
+  assert.deepEqual(buildArgs({ sessionId: id }).slice(-2), ['--resume', id]);
+  for (const bad of [undefined, '', 'abc', `${id} & calc`, '--dangerously-skip-permissions']) assert.ok(!buildArgs({ sessionId: bad }).includes('--resume'));
+});
+test('buildArgs turns off tools and the user setup in chat mode (the default) only', () => {
+  const chat = buildArgs();
+  assert.equal(chat[chat.indexOf('--tools') + 1], '');
+  assert.equal(chat[chat.indexOf('--setting-sources') + 1], '');
+  for (const flag of ['--strict-mcp-config', '--disable-slash-commands']) assert.ok(chat.includes(flag));
+  assert.deepEqual(buildArgs({ mode: 'chat' }), chat);
+  assert.ok(!buildArgs({ mode: 'code' }).includes('--tools'));
+});
+test('shellArgs quotes empty values only when going through a shell', () => {
+  assert.deepEqual(shellArgs(['--tools', '', '-p'], true), ['--tools', '""', '-p']);
+  assert.deepEqual(shellArgs(['--tools', ''], false), ['--tools', '']);
 });
 
 const only = (...files: string[]) => (f: string) => files.includes(f);

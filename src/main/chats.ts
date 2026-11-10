@@ -2,11 +2,15 @@ import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Chat: text only, none of your Claude Code setup. Code (v0.3): tools, your setup, a project folder.
+export type Mode = 'chat' | 'code';
+
 export interface Chat {
   id: string;
   title: string;
   updatedAt: number;
   sessionId?: string; // Claude Code session to resume on follow-ups
+  mode?: Mode; // missing = 'chat' (chats saved before modes existed)
 }
 
 const file = () => path.join(app.getPath('userData'), 'chats.json');
@@ -22,7 +26,8 @@ export function parseChats(text: string): Chat[] {
         typeof c.id === 'string' &&
         typeof c.title === 'string' &&
         typeof c.updatedAt === 'number' &&
-        (c.sessionId === undefined || typeof c.sessionId === 'string'),
+        (c.sessionId === undefined || typeof c.sessionId === 'string') &&
+        (c.mode === undefined || c.mode === 'chat' || c.mode === 'code'),
     );
   } catch {
     return [];
@@ -37,7 +42,7 @@ export function makeTitle(text: string): string {
 // The title comes from the first message only; later messages just bump updatedAt.
 export function upsert(chats: Chat[], id: string, text: string, now: number): Chat[] {
   const old = chats.find((c) => c.id === id);
-  const next: Chat = { ...old, id, title: old?.title ?? makeTitle(text), updatedAt: now };
+  const next: Chat = { mode: 'chat', ...old, id, title: old?.title ?? makeTitle(text), updatedAt: now };
   return [next, ...chats.filter((c) => c.id !== id)];
 }
 

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { loadChats, recent, saveChats, setSession, upsert, type Chat } from './chats';
+import { addUser, isChatId, loadChats, loadMessages, recent, saveChats, saveMessages, setSession, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -148,8 +148,12 @@ async function runReply(id: string, text: string): Promise<void> {
   refreshTray();
   const send = (channel: string, ...args: unknown[]) => win?.webContents.send(channel, ...args);
   send('reply:start');
+  let reply = '';
   try {
-    for await (const chunk of bridge.send(id, text, ac.signal)) send('reply:chunk', chunk);
+    for await (const chunk of bridge.send(id, text, ac.signal)) {
+      reply += chunk;
+      send('reply:chunk', chunk);
+    }
     send('reply:end');
   } catch (err) {
     // Stop and New chat abort on purpose: that is an ordinary end, not an error.
@@ -160,6 +164,8 @@ async function runReply(id: string, text: string): Promise<void> {
       logError(e);
     }
   } finally {
+    // Keep what streamed, even when Stop or an error cut it short; a chat deleted meanwhile stays deleted.
+    if (reply && chats.some((c) => c.id === id)) saveMessages(id, [...loadMessages(id), { role: 'claude', text: reply, at: Date.now() }]);
     inflight = null;
     refreshTray();
   }
@@ -211,8 +217,7 @@ if (!app.requestSingleInstanceLock()) {
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
-      if (typeof id !== 'string' || typeof text !== 'string') return;
-      if (id.length > 100) return;
+      if (!isChatId(id) || typeof text !== 'string') return;
       if (text.length > MAX_MESSAGE_LENGTH) {
         // The renderer is already waiting on a reply; without this it would stay on Stop forever.
         const error: ReplyError = { case: 'unknown', message: `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).` };
@@ -220,8 +225,10 @@ if (!app.requestSingleInstanceLock()) {
         return;
       }
       if (inflight) return; // one reply at a time; the renderer swaps Send for Stop
-      chats = upsert(chats, id, text, Date.now());
+      const now = Date.now();
+      chats = upsert(chats, id, text, now);
       saveChats(chats);
+      saveMessages(id, addUser(loadMessages(id), text, now));
       refreshTray();
       void runReply(id, text);
     });

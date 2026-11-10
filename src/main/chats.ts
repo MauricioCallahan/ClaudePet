@@ -8,12 +8,25 @@ export type Mode = 'chat' | 'code';
 export interface Chat {
   id: string;
   title: string;
+  createdAt?: number; // missing on chats saved before M2-5; use updatedAt
   updatedAt: number;
   sessionId?: string; // Claude Code session to resume on follow-ups
   mode?: Mode; // missing = 'chat' (chats saved before modes existed)
 }
 
+export interface Message {
+  role: 'user' | 'claude';
+  text: string;
+  at: number;
+}
+
 const file = () => path.join(app.getPath('userData'), 'chats.json');
+const messagesFile = (id: string) => path.join(app.getPath('userData'), 'chats', `${id}.json`);
+
+// The id names a file, so only plain ids may reach the disk (no '..', no slashes).
+export function isChatId(id: unknown): id is string {
+  return typeof id === 'string' && /^[\w-]{1,100}$/.test(id);
+}
 
 // Drop anything that is not a well-formed entry; a corrupt file must never block launch.
 export function parseChats(text: string): Chat[] {
@@ -26,12 +39,31 @@ export function parseChats(text: string): Chat[] {
         typeof c.id === 'string' &&
         typeof c.title === 'string' &&
         typeof c.updatedAt === 'number' &&
+        (c.createdAt === undefined || typeof c.createdAt === 'number') &&
         (c.sessionId === undefined || typeof c.sessionId === 'string') &&
         (c.mode === undefined || c.mode === 'chat' || c.mode === 'code'),
     );
   } catch {
     return [];
   }
+}
+
+export function parseMessages(text: string): Message[] {
+  try {
+    const v = JSON.parse(text);
+    if (!Array.isArray(v)) return [];
+    return v.filter(
+      (m): m is Message => !!m && (m.role === 'user' || m.role === 'claude') && typeof m.text === 'string' && typeof m.at === 'number',
+    );
+  } catch {
+    return [];
+  }
+}
+
+// Retry resends the last message without a new bubble, so it must not be stored twice.
+export function addUser(msgs: Message[], text: string, at: number): Message[] {
+  const last = msgs[msgs.length - 1];
+  return last?.role === 'user' && last.text === text ? msgs : [...msgs, { role: 'user', text, at }];
 }
 
 export function makeTitle(text: string): string {
@@ -42,7 +74,7 @@ export function makeTitle(text: string): string {
 // The title comes from the first message only; later messages just bump updatedAt.
 export function upsert(chats: Chat[], id: string, text: string, now: number): Chat[] {
   const old = chats.find((c) => c.id === id);
-  const next: Chat = { mode: 'chat', ...old, id, title: old?.title ?? makeTitle(text), updatedAt: now };
+  const next: Chat = { mode: 'chat', createdAt: now, ...old, id, title: old?.title ?? makeTitle(text), updatedAt: now };
   return [next, ...chats.filter((c) => c.id !== id)];
 }
 
@@ -62,14 +94,26 @@ export function loadChats(): Chat[] {
   }
 }
 
-// Temp file + rename, as in settings.ts, so a crash can't leave half a file.
-export function saveChats(chats: Chat[]): void {
+export function loadMessages(id: string): Message[] {
   try {
-    fs.mkdirSync(app.getPath('userData'), { recursive: true });
-    const tmp = file() + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(chats, null, 2));
-    fs.renameSync(tmp, file());
+    return parseMessages(fs.readFileSync(messagesFile(id), 'utf8'));
   } catch {
-    // shortcut: save errors are silent, the index is rebuilt by M2 once chats hold real history
+    return [];
   }
 }
+
+// Temp file + rename, as in settings.ts, so a crash can't leave half a file.
+// A failed write is logged, not thrown: every save rewrites the whole file, so the next one repairs it.
+function writeAtomic(target: string, data: unknown): void {
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const tmp = target + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    console.error(`Could not save ${target}:`, err);
+  }
+}
+
+export const saveChats = (chats: Chat[]): void => writeAtomic(file(), chats);
+export const saveMessages = (id: string, msgs: Message[]): void => writeAtomic(messagesFile(id), msgs);

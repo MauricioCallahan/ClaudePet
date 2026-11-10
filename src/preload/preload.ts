@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+type ReplyError = { message: string; link?: string; retry?: boolean };
+
 // Expose narrow callbacks only, never ipcRenderer itself.
 contextBridge.exposeInMainWorld('pet', {
   onNewChat: (cb: () => void): void => {
@@ -31,7 +33,7 @@ contextBridge.exposeInMainWorld('pet', {
   onReplyEnd: (cb: () => void): void => {
     ipcRenderer.on('reply:end', () => cb());
   },
-  onReplyError: (cb: (error: { message: string; link?: string; retry?: boolean }) => void): void => {
-    ipcRenderer.on('reply:error', (_e, error: { message: string; link?: string; retry?: boolean }) => cb(error));
+  onReplyError: (cb: (error: ReplyError) => void): void => {
+    ipcRenderer.on('reply:error', (_e, error: ReplyError) => cb(error));
   },
 });

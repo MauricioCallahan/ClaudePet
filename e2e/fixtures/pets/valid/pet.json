@@ -1,0 +1,6 @@
+{
+  "id": "valid",
+  "displayName": "Test valid",
+  "description": "ClaudePet test pet",
+  "spritesheetPath": "spritesheet.png"
+}

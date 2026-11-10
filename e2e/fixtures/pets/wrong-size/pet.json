@@ -1,0 +1,6 @@
+{
+  "id": "wrong-size",
+  "displayName": "Test wrong-size",
+  "description": "ClaudePet test pet",
+  "spritesheetPath": "spritesheet.png"
+}

@@ -1,0 +1,11 @@
+{
+  "id": "extra-fields",
+  "displayName": "Test extra-fields",
+  "description": "ClaudePet test pet",
+  "spritesheetPath": "spritesheet.png",
+  "spriteVersionNumber": 2,
+  "kind": "object",
+  "author": {
+    "name": "ClaudePet tests"
+  }
+}

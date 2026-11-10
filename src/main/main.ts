@@ -127,6 +127,8 @@ const bridge: Bridge =
           }
         },
         promptFile: path.join(app.getPath('userData'), 'system-prompt.md'),
+        // Long, because Code mode (v0.3) runs tools that print nothing for minutes; e2e sets it short.
+        idleMs: Number(process.env.CLAUDEPET_IDLE_MS) || 15 * 60_000,
       });
 let inflight: AbortController | null = null;
 

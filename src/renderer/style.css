@@ -23,4 +23,5 @@ textarea { flex: 1; resize: none; font: inherit; padding: 6px; }
 form button { padding: 0 12px; cursor: pointer; }
 .claude pre .copy { position: absolute; top: 4px; right: 4px; padding: 1px 6px; font-size: 12px; cursor: pointer; user-select: none; }
 .copy-reply { position: absolute; bottom: 2px; right: 4px; padding: 0 6px; font-size: 11px; cursor: pointer; opacity: 0; }
+.retry { padding: 0 8px; cursor: pointer; }
 .msg:hover .copy-reply, .copy-reply:focus-visible { opacity: 1; }

@@ -56,3 +56,8 @@ test('describe: the usage limit says when it resets, if Claude Code reported it'
 test('toBridgeError: a rejected rate_limit_event makes it the usage limit, whatever the text', () => {
   assert.equal(toBridgeError('API Error: 429', 1, 1736985600).info.case, 'usage-limit');
 });
+test('describe: network and timeout errors offer Retry; the others do not', () => {
+  assert.equal(describe('network', '').retry, true);
+  assert.equal(describe('timeout', '').retry, true);
+  for (const c of ['not-installed', 'not-signed-in', 'usage-limit', 'unknown'] as const) assert.equal(describe(c, 'x').retry, undefined, c);
+});

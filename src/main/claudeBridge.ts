@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge } from './bridge';
 import type { Mode } from './chats';
-import { BridgeError, describe, toBridgeError } from './errors';
+import { BridgeError, describe, toBridgeError, type ErrorCase } from './errors';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
 export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boolean, home: string): string | undefined {
@@ -42,6 +42,7 @@ export interface BridgeEvent {
   sessionId?: string;
   error?: string;
   resetsAt?: number; // the usage limit was hit; unix seconds when it resets
+  offline?: boolean; // Claude Code is retrying a request that got no response at all
 }
 
 // One line of `claude -p --output-format stream-json`. Anything we do not need, or cannot parse, is null.
@@ -55,6 +56,8 @@ export function parseLine(line: string): BridgeEvent | null {
   if (!v || typeof v !== 'object') return null;
   const sessionId = typeof v.session_id === 'string' ? v.session_id : undefined;
   if (v.type === 'system' && v.subtype === 'init') return sessionId ? { sessionId } : null;
+  // error_status is null when no HTTP response came back; a status (429, 529) is the API, not the network.
+  if (v.type === 'system' && v.subtype === 'api_retry') return v.error_status === null ? { offline: true } : null;
   if (v.type === 'stream_event') {
     const d = v.event?.delta;
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
@@ -92,6 +95,7 @@ export interface ClaudeBridgeOptions {
   model: () => unknown; // read on every send, so a settings change applies to the next message
   instructions: () => string | undefined; // the user's own custom instructions file, if any
   promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
+  idleMs: number; // no output for this long ends the reply as a timeout
 }
 
 // Replaces Claude Code's coding prompt in chat mode. Claude Code keeps a chat's first prompt, so edits apply to new chats.
@@ -130,6 +134,9 @@ export function buildArgs({ mode = 'chat', sessionId, model, promptFile }: { mod
   return args;
 }
 
+// Claude Code retries on its own for minutes; a blip recovers within a few retries, so more than that means offline.
+const OFFLINE_RETRIES = 3;
+
 // Runs the claude CLI once per message and streams its reply.
 export class ClaudeBridge implements Bridge {
   constructor(private opts: ClaudeBridgeOptions) {}
@@ -162,10 +169,22 @@ export class ClaudeBridge implements Bridge {
     signal.addEventListener('abort', onAbort, { once: true });
     let error: string | undefined;
     let resetsAt: number | undefined;
+    let offline = 0;
+    let stopped: ErrorCase | undefined; // set when we end the process ourselves
+    const stop = (c: ErrorCase) => {
+      stopped = c;
+      killTree(child);
+    };
+    const idle = setTimeout(() => stop('timeout'), this.opts.idleMs);
     try {
       for await (const line of readline.createInterface({ input: child.stdout })) {
         if (signal.aborted) break; // lines already buffered must not keep streaming after Stop
+        idle.refresh();
         const ev = parseLine(line);
+        if (ev?.offline && ++offline >= OFFLINE_RETRIES) {
+          stop('network');
+          break;
+        }
         if (ev?.error) error = ev.error;
         if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
@@ -173,9 +192,12 @@ export class ClaudeBridge implements Bridge {
       }
       const code = await exit;
       signal.throwIfAborted();
+      if (stopped === 'network') throw new BridgeError(describe('network', `no response after ${offline} retries`));
+      if (stopped === 'timeout') throw new BridgeError(describe('timeout', `no output for ${this.opts.idleMs} ms`));
       if (error) throw toBridgeError(error, code, resetsAt);
       if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code, resetsAt);
     } finally {
+      clearTimeout(idle);
       signal.removeEventListener('abort', onAbort);
       killTree(child); // no-op after a normal exit; covers a caller that stops reading early
     }

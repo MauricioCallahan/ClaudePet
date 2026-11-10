@@ -38,6 +38,10 @@ export function describe(c: ErrorCase, detail: string, resetsAt?: number): Reply
       const when = resetsAt && new Date(resetsAt * 1000).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
       return { case: c, message: `You've reached your Claude usage limit. ${when ? `It resets ${when}.` : 'Try again later.'}` };
     }
+    case 'network':
+      return { case: c, message: "Can't reach Claude. Check your internet connection.", retry: true };
+    case 'timeout':
+      return { case: c, message: 'Claude stopped responding.', retry: true };
     default:
       return { case: c, message: detail };
   }

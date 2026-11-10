@@ -9,6 +9,9 @@ export interface TrayActions {
   newChat(): void;
   recent(): Chat[];
   openChat(id: string): void;
+  choosePet(): void;
+  isPetHidden(): boolean;
+  togglePetHidden(): void;
 }
 
 // Module-level so the Tray is not garbage-collected (the icon would vanish).
@@ -33,6 +36,13 @@ export function refreshTray(): void {
               click: () => actions.openChat(c.id),
             }))
           : [{ label: 'No recent chats', enabled: false }],
+      },
+      {
+        label: 'Pet',
+        submenu: [
+          { label: 'Choose pet…', click: actions.choosePet },
+          { label: 'Hide pet', type: 'checkbox', checked: actions.isPetHidden(), click: actions.togglePetHidden },
+        ],
       },
       { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },

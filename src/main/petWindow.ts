@@ -9,6 +9,9 @@ const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size 
 // Module-level, like the tray, so main only has to call createPet once.
 let pet: BrowserWindow | null = null;
 let sprite: Pet | undefined;
+let shown = true; // pet.enabled: "Hide pet" in the tray turns it off
+let owner: BrowserWindow | null = null; // the chat box the pet stands on
+let ready = false; // the pet page has loaded and can take a sheet
 
 function place(box: BrowserWindow): void {
   const b = box.getBounds();
@@ -25,9 +28,11 @@ function makeRoom(box: BrowserWindow): void {
 
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
 // shortcut: the whole 96x104 rectangle takes clicks, even transparent pixels; add setIgnoreMouseEvents hit-testing if it gets in the way
-// Without a valid pet the window keeps the placeholder picture.
-export function createPet(box: BrowserWindow, onClick: () => void, chosen?: Pet): void {
+// Without a valid pet the window keeps the placeholder picture. A disabled pet's window exists but stays hidden.
+export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet | undefined, enabled: boolean): void {
   sprite = chosen;
+  shown = enabled;
+  owner = box;
   pet = new BrowserWindow({
     ...SIZE,
     show: false,
@@ -47,9 +52,8 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen?: Pet)
   });
   pet.loadFile(path.join(__dirname, '../renderer/pet.html'));
   pet.webContents.once('did-finish-load', () => {
-    if (!sprite) return;
-    pet?.webContents.send('pet:sheet', { url: pathToFileURL(sprite.sheetPath).href, columns: COLUMNS, rows: sprite.rows });
-    playRow(0);
+    ready = true;
+    setPet(sprite);
   });
   makeRoom(box); // a saved spot from before the pet existed may be too high
   place(box);
@@ -60,17 +64,34 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen?: Pet)
   // The pet is shown and hidden with the box (Show/Hide, hotkey, ×), and never on its own.
   box.on('show', () => {
     place(box);
-    pet?.showInactive();
+    if (shown) pet?.showInactive();
   });
   box.on('hide', () => pet?.hide());
   // Quit closes every window by itself, the pet included; this only drops the dead reference.
   pet.on('closed', () => (pet = null));
   pet.once('ready-to-show', () => {
-    if (box.isVisible()) pet?.showInactive();
+    if (shown && box.isVisible()) pet?.showInactive();
   });
   ipcMain.on('pet:click', (e) => {
     if (e.sender === pet?.webContents) onClick();
   });
+}
+
+// Swaps the sheet and starts on idle; before the page has loaded, its load handler does it.
+export function setPet(p: Pet | undefined): void {
+  sprite = p;
+  if (!p || !pet || !ready) return;
+  pet.webContents.send('pet:sheet', { url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows });
+  playRow(0);
+}
+
+// The pet still only shows while the box does.
+export function setPetEnabled(on: boolean): void {
+  shown = on;
+  if (on && owner?.isVisible()) {
+    place(owner);
+    pet?.showInactive();
+  } else pet?.hide();
 }
 
 // Plays one row of the sheet (0 = idle, see ROWS); a row the sheet doesn't have plays idle instead.

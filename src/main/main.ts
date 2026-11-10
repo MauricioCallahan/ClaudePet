@@ -9,8 +9,10 @@ import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
-import { createPet } from './petWindow';
-import type { Pet } from './petFormat';
+import { pathToFileURL } from 'node:url';
+import { createPet, setPet, setPetEnabled } from './petWindow';
+import { COLUMNS, type Pet } from './petFormat';
+import { initPicker, openPicker, pickerChanged, type PickerItem } from './pickerWindow';
 import { ensurePetsDir, scanPets, type ListedPet } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
@@ -187,10 +189,31 @@ async function openChat(id: string): Promise<void> {
 }
 
 let pets: ListedPet[] = [];
+let petSetting = { enabled: true, id: DEFAULT_PET_ID };
+let shownPet: Pet | undefined;
 
 // shortcut: no logged reason for the fallback yet; M2.5-3.5 replaces this with pickPet
 function choosePet(id: string): Pet | undefined {
   return pets.find((p) => p.manifest.id === id) ?? pets.find((p) => p.manifest.id === DEFAULT_PET_ID);
+}
+
+// saveSettings merges only the top level, so the whole pet object is saved each time.
+function savePetSetting(patch: Partial<typeof petSetting>): void {
+  petSetting = { ...petSetting, ...patch };
+  saveSettings({ pet: petSetting });
+}
+
+const pickerItems = (): PickerItem[] =>
+  pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
+
+// From the picker: only an id that is in the list (the picker's id is already checked to be a safe name).
+function choosePetById(id: string): void {
+  const p = pets.find((q) => q.manifest.id === id);
+  if (!p) return;
+  savePetSetting({ id });
+  shownPet = p;
+  setPet(p);
+  pickerChanged();
 }
 
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
@@ -307,8 +330,10 @@ if (!app.requestSingleInstanceLock()) {
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
     ensurePetsDir();
     pets = scanPets();
-    const petSetting = petSettings(loadSettings());
-    if (petSetting.enabled) win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, choosePet(petSetting.id)));
+    petSetting = petSettings(loadSettings());
+    shownPet = choosePet(petSetting.id);
+    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled));
+    initPicker({ list: pickerItems, choose: choosePetById });
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),
@@ -320,6 +345,13 @@ if (!app.requestSingleInstanceLock()) {
       },
       recent: () => recent(chats),
       openChat: (id) => void openChat(id),
+      choosePet: openPicker,
+      isPetHidden: () => !petSetting.enabled,
+      togglePetHidden: () => {
+        savePetSetting({ enabled: !petSetting.enabled });
+        setPetEnabled(petSetting.enabled);
+        refreshTray();
+      },
     });
     const { hotkey: saved } = loadSettings();
     registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);

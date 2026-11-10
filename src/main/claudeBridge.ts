@@ -58,6 +58,12 @@ export function parseLine(line: string): BridgeEvent | null {
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
   }
   if (v.type === 'result') {
+    // Reported as a success, but a denied tool means the reply is not what was asked for.
+    const denied = Array.isArray(v.permission_denials) ? v.permission_denials[0] : undefined;
+    if (denied) {
+      const tool = typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool';
+      return { error: `Claude Code asked to use ${tool}, but tools are off in pet chats.` };
+    }
     if (!v.is_error) return sessionId ? { sessionId } : null;
     return { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' };
   }
@@ -88,7 +94,8 @@ const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config'
 
 export function buildArgs({ mode = 'chat', sessionId }: { mode?: Mode; sessionId?: string } = {}): string[] {
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages'];
+  // --permission-prompts none: the process is hidden, so anything that would ask for permission is denied, never left waiting.
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompts', 'none'];
   if (mode === 'chat') args.push(...CHAT_ONLY);
   if (sessionId && UUID.test(sessionId)) args.push('--resume', sessionId);
   return args;

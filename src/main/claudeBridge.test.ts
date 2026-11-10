@@ -70,6 +70,15 @@ test('parseLine: an error result carries the message and no session id', () => {
   assert.deepEqual(parseLine(line), { error: 'Invalid API key · Please run /login' });
   assert.deepEqual(parseLine('{"type":"result","subtype":"error_during_execution","is_error":true}'), { error: 'Claude Code reported an error.' });
 });
+test('parseLine: a denied tool ends the reply with an error, even though the result says success', () => {
+  // Recorded from claude 2.1.321 with --permission-prompts none (usage and other fields trimmed).
+  const line = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'The command was blocked.', session_id: '6c0baf1c-cc0a-4f43-8d71-1194d5c4a136', permission_denials: [{ tool_name: 'Bash', tool_use_id: 'toolu_01', tool_input: { command: 'echo hi > x.txt' } }] });
+  assert.deepEqual(parseLine(line), { error: 'Claude Code asked to use Bash, but tools are off in pet chats.' });
+  assert.deepEqual(parseLine(JSON.stringify({ type: 'result', is_error: false, permission_denials: [], session_id: 's' })), { sessionId: 's' });
+});
+test('buildArgs never lets a permission prompt wait for an answer, in any mode', () => {
+  for (const mode of ['chat', 'code'] as const) assert.equal(buildArgs({ mode }).join(' ').includes('--permission-prompts none'), true);
+});
 test('parseLine: truncated or non-JSON lines are ignored, not thrown', () => {
   for (const line of [delta('cut off').slice(0, 60), '', 'Warning: something on stdout', 'null', '5', '"text"']) assert.equal(parseLine(line), null);
 });

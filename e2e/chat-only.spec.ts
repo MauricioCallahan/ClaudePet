@@ -47,3 +47,9 @@ test('claude runs in the empty workspace folder inside the app data, not a home 
   expect(path.resolve(cwd).toLowerCase()).toBe(path.join(profile, 'workspace').toLowerCase());
   expect(fs.readdirSync(cwd)).toEqual([]);
 });
+
+test('a denied permission ends the reply with a clear error instead of hanging', async () => {
+  await send('/deny');
+  await idle();
+  await expect(page.locator('#messages')).toContainText('Claude Code asked to use Bash, but tools are off in pet chats.');
+});

@@ -20,6 +20,11 @@ process.stdin.on('end', () => {
     out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id });
     return;
   }
+  if (prompt.startsWith('/deny')) {
+    say('I need to run a command.');
+    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: 'Bash' }] });
+    return;
+  }
   if (prompt.startsWith('/fail')) {
     process.stderr.write('fake claude failed\n');
     process.exit(1);

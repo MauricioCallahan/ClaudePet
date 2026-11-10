@@ -54,12 +54,12 @@ test('Markdown renders and a script in the reply does not run', async () => {
 
 test('Copy puts the exact code, and Copy reply the whole Markdown, on the clipboard', async () => {
   const clipboard = () => app.evaluate(({ clipboard }) => clipboard.readText());
+  // Polled: the copy goes renderer → main → system clipboard, which can land a moment after the click returns.
   await lastReply().locator('button.copy').click();
-  expect(await clipboard()).toBe('const a = 1 < 2;\n');
+  await expect.poll(clipboard).toBe('const a = 1 < 2;\n');
   await lastReply().locator('button.copy-reply').click();
-  const whole = await clipboard();
-  expect(whole.startsWith('# Heading\n')).toBe(true);
-  expect(whole).toContain('```js');
+  await expect.poll(clipboard).toMatch(/^# Heading\n/);
+  expect(await clipboard()).toContain('```js');
 });
 
 test('messages show a time on hover', async () => {

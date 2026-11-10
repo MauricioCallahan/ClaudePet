@@ -75,7 +75,7 @@ test.describe('with the pet on', () => {
 
   test('clicking the pet hides the box, and the pet with it', async () => {
     const pet = app.windows().find((p) => p.url().endsWith('pet.html'))!;
-    await pet.click('img');
+    await pet.click('#pet');
     await expect.poll(async () => (await windows()).boxVisible).toBe(false);
     expect((await windows()).petVisible).toBe(false);
   });

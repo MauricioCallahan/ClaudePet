@@ -10,6 +10,7 @@ import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, petSettings, saveSettings } from './settings';
 import { createPet } from './petWindow';
+import { loadPet, type Pet } from './petFormat';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -184,6 +185,15 @@ async function openChat(id: string): Promise<void> {
   showAndSend('chat:open', id);
 }
 
+// shortcut: only userData\pets\<id> is looked at and a bad pet keeps the placeholder; bullet 3 adds built-in, Codex pets and the fallback
+function choosePet(id: string): Pet | undefined {
+  try {
+    return loadPet(path.join(app.getPath('userData'), 'pets', id));
+  } catch (err) {
+    console.error(`Pet "${id}" not loaded:`, (err as Error).message);
+  }
+}
+
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
 async function deleteChat(id: string): Promise<void> {
   // Only this chat's own reply is stopped and waited for (its save must not bring the messages back).
@@ -296,7 +306,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     createWindow();
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
-    if (petSettings(loadSettings()).enabled) win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow));
+    const petSetting = petSettings(loadSettings());
+    if (petSetting.enabled) win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, choosePet(petSetting.id)));
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),

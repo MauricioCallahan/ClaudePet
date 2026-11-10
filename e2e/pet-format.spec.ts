@@ -104,9 +104,8 @@ for (const id of ['broken-json', 'wrong-size']) {
     test.beforeAll(() => launch(id));
     test.afterAll(quit);
 
-    test('keeps the placeholder and the app keeps running', async () => {
-      await pet.waitForTimeout(500); // a sheet would have arrived by now
-      expect(await pet.evaluate(() => getComputedStyle(document.getElementById('pet')!).backgroundImage)).toContain('pet-placeholder.svg');
+    test('shows the built-in pet instead and the app keeps running', async () => {
+      await expect.poll(() => pet.evaluate(() => getComputedStyle(document.getElementById('pet')!).backgroundImage)).toContain('/assets/pets/pip/spritesheet.png');
       expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(2);
     });
   });

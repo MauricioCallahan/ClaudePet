@@ -10,7 +10,7 @@ export interface Settings {
   pet?: { enabled?: unknown; id?: unknown }; // read through petSettings; saveSettings merges shallowly, so save the whole object
 }
 
-export const DEFAULT_PET_ID = 'default'; // shortcut: placeholder id, rename when bullet 3 ships the built-in pet
+export const DEFAULT_PET_ID = 'pip'; // the built-in pet in assets/pets/pip
 
 // Pet ids become folder names under pets\, so only lowercase letters, digits and dashes.
 export const isPetId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(v);

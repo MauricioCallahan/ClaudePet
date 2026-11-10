@@ -8,10 +8,10 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
-import { loadSettings, petSettings, saveSettings } from './settings';
+import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
 import { createPet } from './petWindow';
 import { loadPet, type Pet } from './petFormat';
-import { ensurePetsDir, userPetsDir } from './pets';
+import { builtInPetsDir, ensurePetsDir, userPetsDir } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -186,13 +186,18 @@ async function openChat(id: string): Promise<void> {
   showAndSend('chat:open', id);
 }
 
-// shortcut: only userData\pets\<id> is looked at and a bad pet keeps the placeholder; bullet 3 adds built-in, Codex pets and the fallback
-function choosePet(id: string): Pet | undefined {
+function tryLoadPet(dir: string): Pet | undefined {
   try {
-    return loadPet(path.join(userPetsDir(), id));
+    return loadPet(dir);
   } catch (err) {
-    console.error(`Pet "${id}" not loaded:`, (err as Error).message);
+    console.error(`Pet in ${dir} not loaded:`, (err as Error).message);
   }
+}
+
+// shortcut: no Codex folder and no fallback reason yet; M2.5-3.3 and 3.5 replace this with listPets and pickPet
+function choosePet(id: string): Pet | undefined {
+  const builtIn = path.join(builtInPetsDir, id);
+  return tryLoadPet(fs.existsSync(builtIn) ? builtIn : path.join(userPetsDir(), id)) ?? tryLoadPet(path.join(builtInPetsDir, DEFAULT_PET_ID));
 }
 
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.

@@ -13,3 +13,6 @@ export function ensurePetsDir(): void {
     console.error('Could not create the pets folder:', (err as Error).message);
   }
 }
+
+// Shipped with the app and read in place, like assets/tray.ico.
+export const builtInPetsDir = path.join(__dirname, '../../assets/pets');

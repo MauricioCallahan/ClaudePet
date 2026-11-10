@@ -11,6 +11,7 @@ import { isWebUrl } from './links';
 import { loadSettings, petSettings, saveSettings } from './settings';
 import { createPet } from './petWindow';
 import { loadPet, type Pet } from './petFormat';
+import { ensurePetsDir, userPetsDir } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -188,7 +189,7 @@ async function openChat(id: string): Promise<void> {
 // shortcut: only userData\pets\<id> is looked at and a bad pet keeps the placeholder; bullet 3 adds built-in, Codex pets and the fallback
 function choosePet(id: string): Pet | undefined {
   try {
-    return loadPet(path.join(app.getPath('userData'), 'pets', id));
+    return loadPet(path.join(userPetsDir(), id));
   } catch (err) {
     console.error(`Pet "${id}" not loaded:`, (err as Error).message);
   }
@@ -306,6 +307,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     createWindow();
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
+    ensurePetsDir();
     const petSetting = petSettings(loadSettings());
     if (petSetting.enabled) win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, choosePet(petSetting.id)));
     createTray({

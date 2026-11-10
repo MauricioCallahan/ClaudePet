@@ -21,7 +21,7 @@ const scrollState = () => page.locator('#messages').evaluate((m) => ({ overflow:
 
 test.beforeAll(async () => {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
-  app = await _electron.launch({ args: ['.', `--user-data-dir=${profile}`] });
+  app = await _electron.launch({ args: ['.', `--user-data-dir=${profile}`], env: { ...process.env, CLAUDEPET_BRIDGE: 'fake' } });
   page = await app.firstWindow();
   await expect(lastReply()).toHaveText(/ClaudePet/); // the module script has run and its handlers are attached
 });

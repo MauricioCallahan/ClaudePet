@@ -6,6 +6,7 @@ export interface Chat {
   id: string;
   title: string;
   updatedAt: number;
+  sessionId?: string; // Claude Code session to resume on follow-ups
 }
 
 const file = () => path.join(app.getPath('userData'), 'chats.json');
@@ -17,7 +18,11 @@ export function parseChats(text: string): Chat[] {
     if (!Array.isArray(v)) return [];
     return v.filter(
       (c): c is Chat =>
-        !!c && typeof c.id === 'string' && typeof c.title === 'string' && typeof c.updatedAt === 'number',
+        !!c &&
+        typeof c.id === 'string' &&
+        typeof c.title === 'string' &&
+        typeof c.updatedAt === 'number' &&
+        (c.sessionId === undefined || typeof c.sessionId === 'string'),
     );
   } catch {
     return [];
@@ -32,8 +37,12 @@ export function makeTitle(text: string): string {
 // The title comes from the first message only; later messages just bump updatedAt.
 export function upsert(chats: Chat[], id: string, text: string, now: number): Chat[] {
   const old = chats.find((c) => c.id === id);
-  const next: Chat = { id, title: old?.title ?? makeTitle(text), updatedAt: now };
+  const next: Chat = { ...old, id, title: old?.title ?? makeTitle(text), updatedAt: now };
   return [next, ...chats.filter((c) => c.id !== id)];
+}
+
+export function setSession(chats: Chat[], id: string, sessionId: string): Chat[] {
+  return chats.map((c) => (c.id === id ? { ...c, sessionId } : c));
 }
 
 export function recent(chats: Chat[], n = 10): Chat[] {

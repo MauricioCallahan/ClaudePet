@@ -1,7 +1,10 @@
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { loadChats, recent, saveChats, upsert, type Chat } from './chats';
+import { loadChats, recent, saveChats, setSession, upsert, type Chat } from './chats';
+import fs from 'node:fs';
+import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
+import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
@@ -95,8 +98,23 @@ function showAndSend(channel: string, ...args: unknown[]): void {
 
 let chats: Chat[] = [];
 
-// Milestone 2 swaps in the real claude bridge here.
-const bridge: Bridge = new FakeBridge();
+const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
+// CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
+const bridge: Bridge =
+  process.env.CLAUDEPET_BRIDGE === 'fake'
+    ? new FakeBridge()
+    : new ClaudeBridge({
+        exe: claudePath,
+        cwd: path.join(app.getPath('userData'), 'workspace'),
+        sessions: {
+          get: (id) => chats.find((c) => c.id === id)?.sessionId,
+          set: (id, sessionId) => {
+            if (chats.find((c) => c.id === id)?.sessionId === sessionId) return; // every reply repeats it
+            chats = setSession(chats, id, sessionId);
+            saveChats(chats);
+          },
+        },
+      });
 let inflight: AbortController | null = null;
 
 // Streams one reply to the renderer as reply:start, reply:chunk..., then reply:end or reply:error.
@@ -159,6 +177,9 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', showWindow);
   app.whenReady().then(() => {
+    const claude = claudePath();
+    if (!claude) console.log('Claude Code: not installed');
+    else void readVersion(claude).then((v) => console.log(`Claude Code: ${claude} (${v ?? 'unknown version'})`));
     chats = loadChats();
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown) => {
@@ -201,6 +222,7 @@ if (!app.requestSingleInstanceLock()) {
   // Covers every quit path (tray menu, Windows shutdown), not just our own menu item.
   app.on('before-quit', () => {
     isQuitting = true;
+    inflight?.abort(); // kills a running claude process so none outlives the app
     destroyTray();
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());

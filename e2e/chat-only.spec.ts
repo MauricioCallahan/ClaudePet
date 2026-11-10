@@ -41,3 +41,9 @@ test('tools and the user setup are off, and the empty values survive the .cmd sh
   expect(args[args.indexOf('--setting-sources') + 1]).toBe('');
   expect(args).toEqual(expect.arrayContaining(['--strict-mcp-config', '--disable-slash-commands']));
 });
+
+test('claude runs in the empty workspace folder inside the app data, not a home or repo folder', async () => {
+  const { cwd } = await started();
+  expect(path.resolve(cwd).toLowerCase()).toBe(path.join(profile, 'workspace').toLowerCase());
+  expect(fs.readdirSync(cwd)).toEqual([]);
+});

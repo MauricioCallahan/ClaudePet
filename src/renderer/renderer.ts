@@ -58,6 +58,9 @@ input.addEventListener('keydown', (e) => {
 // The main process turns close into hide-to-tray.
 document.getElementById('close')!.addEventListener('click', () => window.close());
 
+// Sent by main on reply:error; link opens in the browser (via will-navigate), retry resends the last message.
+type ReplyError = { message: string; link?: string; retry?: boolean };
+
 // Provided by the preload script.
 declare const pet: {
   onNewChat(cb: () => void): void;
@@ -69,7 +72,7 @@ declare const pet: {
   onReplyStart(cb: () => void): void;
   onReplyChunk(cb: (text: string) => void): void;
   onReplyEnd(cb: () => void): void;
-  onReplyError(cb: (message: string) => void): void;
+  onReplyError(cb: (error: ReplyError) => void): void;
 };
 
 // One listener for every Copy button, including ones created by later renders.
@@ -130,10 +133,16 @@ pet.onReplyEnd(() => {
   reply = null;
   setState('idle');
 });
-pet.onReplyError((message) => {
+pet.onReplyError((error) => {
   flush();
   reply = null;
-  addMessage(message, 'claude');
+  const el = addMessage(error.message, 'claude');
+  if (error.link) {
+    const a = document.createElement('a');
+    a.href = error.link;
+    a.textContent = error.link;
+    el.append(' ', a);
+  }
   setState('error');
 });
 

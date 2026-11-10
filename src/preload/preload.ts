@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('pet', {
   onReplyEnd: (cb: () => void): void => {
     ipcRenderer.on('reply:end', () => cb());
   },
-  onReplyError: (cb: (message: string) => void): void => {
-    ipcRenderer.on('reply:error', (_e, message: string) => cb(message));
+  onReplyError: (cb: (error: { message: string; link?: string; retry?: boolean }) => void): void => {
+    ipcRenderer.on('reply:error', (_e, error: { message: string; link?: string; retry?: boolean }) => cb(error));
   },
 });

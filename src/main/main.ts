@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
 import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
+import { BridgeError, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { loadSettings, saveSettings } from './settings';
@@ -142,7 +143,7 @@ async function runReply(id: string, text: string): Promise<void> {
   } catch (err) {
     // Stop and New chat abort on purpose: that is an ordinary end, not an error.
     if (ac.signal.aborted) send('reply:end');
-    else send('reply:error', err instanceof Error ? err.message : String(err));
+    else send('reply:error', err instanceof BridgeError ? err.info : ({ case: 'unknown', message: err instanceof Error ? err.message : String(err) } satisfies ReplyError));
   } finally {
     inflight = null;
     refreshTray();
@@ -199,7 +200,8 @@ if (!app.requestSingleInstanceLock()) {
       if (id.length > 100) return;
       if (text.length > MAX_MESSAGE_LENGTH) {
         // The renderer is already waiting on a reply; without this it would stay on Stop forever.
-        win?.webContents.send('reply:error', `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).`);
+        const error: ReplyError = { case: 'unknown', message: `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).` };
+        win?.webContents.send('reply:error', error);
         return;
       }
       if (inflight) return; // one reply at a time; the renderer swaps Send for Stop

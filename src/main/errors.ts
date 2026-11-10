@@ -15,3 +15,33 @@ export function classify(text: string, code?: number | null): ErrorCase {
   if (code === 9009) return 'not-installed';
   return PATTERNS.find(([, re]) => re.test(text))?.[0] ?? 'unknown';
 }
+
+// What the renderer shows. retry adds a Retry button; link is opened in the browser.
+export interface ReplyError {
+  case: ErrorCase;
+  message: string;
+  link?: string;
+  retry?: boolean;
+}
+
+export const INSTALL_URL = 'https://claude.com/claude-code';
+
+// Known cases get the fix in plain words; unknown keeps Claude Code's own text, the only clue there is.
+export function describe(c: ErrorCase, detail: string): ReplyError {
+  switch (c) {
+    case 'not-installed':
+      return { case: c, message: "Claude Code isn't installed. Install it, then try again:", link: INSTALL_URL };
+    case 'not-signed-in':
+      return { case: c, message: "You're not signed in to Claude Code. Run `claude` once in a terminal and sign in, then try again." };
+    default:
+      return { case: c, message: detail };
+  }
+}
+
+export class BridgeError extends Error {
+  constructor(readonly info: ReplyError) {
+    super(info.message);
+  }
+}
+
+export const toBridgeError = (detail: string, code?: number | null) => new BridgeError(describe(classify(detail, code), detail));

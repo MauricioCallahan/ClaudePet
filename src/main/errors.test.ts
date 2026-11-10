@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify } from './errors';
+import { classify, describe, INSTALL_URL, toBridgeError } from './errors';
+import { isWebUrl } from './links';
 
 // Sample texts as Claude Code 2.1.321 and Windows report them.
 const samples: [string, number | null | undefined, string][] = [
@@ -31,4 +32,17 @@ test('classify recognizes each known case from sample output', () => {
 test('classify: exit code 9009 means not installed even with no output', () => {
   assert.equal(classify('', 9009), 'not-installed');
   assert.equal(classify('', 1), 'unknown');
+});
+test('describe gives the fix for not installed (with the install link) and not signed in', () => {
+  const missing = describe('not-installed', 'spawn claude ENOENT');
+  assert.equal(missing.link, INSTALL_URL);
+  assert.ok(isWebUrl(missing.link!));
+  assert.match(describe('not-signed-in', 'Not logged in · Please run /login').message, /Run `claude` once in a terminal and sign in/);
+});
+test('describe keeps the text of an unknown error as Claude Code reported it', () => {
+  assert.deepEqual(describe('unknown', 'API Error: 529 Overloaded'), { case: 'unknown', message: 'API Error: 529 Overloaded' });
+});
+test('toBridgeError classifies the detail', () => {
+  assert.equal(toBridgeError('Not logged in · Please run /login', 1).info.case, 'not-signed-in');
+  assert.equal(toBridgeError('', 9009).message, describe('not-installed', '').message);
 });

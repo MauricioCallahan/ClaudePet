@@ -4,6 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge } from './bridge';
 import type { Mode } from './chats';
+import { BridgeError, describe, toBridgeError } from './errors';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
 export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boolean, home: string): string | undefined {
@@ -131,7 +132,7 @@ export class ClaudeBridge implements Bridge {
   async *send(chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string> {
     signal.throwIfAborted();
     const exe = this.opts.exe();
-    if (!exe) throw new Error('Claude Code is not installed.');
+    if (!exe) throw new BridgeError(describe('not-installed', 'Claude Code is not installed.'));
     const { file, shell } = command(exe);
     const { cwd, promptFile } = this.opts;
     const mode = this.opts.mode(chatId);
@@ -145,7 +146,7 @@ export class ClaudeBridge implements Bridge {
     let stderr = '';
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
     const exit = new Promise<number | null>((resolve, reject) => {
-      child.once('error', reject); // e.g. the executable vanished since it was found
+      child.once('error', (err) => reject(toBridgeError(err.message))); // e.g. the executable vanished since it was found
       child.once('close', resolve);
     });
     exit.catch(() => {}); // awaited below; this only stops an early throw from leaving it unhandled
@@ -165,8 +166,8 @@ export class ClaudeBridge implements Bridge {
       }
       const code = await exit;
       signal.throwIfAborted();
-      if (error) throw new Error(error);
-      if (code !== 0) throw new Error(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`);
+      if (error) throw toBridgeError(error, code);
+      if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code);
     } finally {
       signal.removeEventListener('abort', onAbort);
       killTree(child); // no-op after a normal exit; covers a caller that stops reading early

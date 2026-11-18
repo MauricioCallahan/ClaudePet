@@ -10,7 +10,8 @@ import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
 import { pathToFileURL } from 'node:url';
-import { createPet, setPet, setPetEnabled } from './petWindow';
+import { createPet, playRow, setPet, setPetEnabled } from './petWindow';
+import { createMood, STATE_ROW } from './petState';
 import { COLUMNS, type Pet } from './petFormat';
 import { initPicker, openPicker, pickerChanged, type PickerItem } from './pickerWindow';
 import { ensurePetsDir, logPets, pickPet, scanPets, type PetScan } from './pets';
@@ -139,6 +140,7 @@ const bridge: Bridge =
 let inflight: AbortController | null = null;
 let replyChat = ''; // the chat the running reply belongs to
 let running: Promise<void> = Promise.resolve(); // the current runReply, so a reopen can wait for its save
+const mood = createMood({ play: (s) => playRow(STATE_ROW[s]) }); // what the pet shows about the reply
 
 // shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
 function logError(e: BridgeError): void {
@@ -157,6 +159,7 @@ async function runReply(id: string, text: string): Promise<void> {
   refreshTray();
   const send = (channel: string, ...args: unknown[]) => win?.webContents.send(channel, ...args);
   send('reply:start');
+  mood.event('send');
   let reply = '';
   try {
     for await (const chunk of bridge.send(id, text, ac.signal)) {
@@ -164,12 +167,16 @@ async function runReply(id: string, text: string): Promise<void> {
       send('reply:chunk', chunk);
     }
     send('reply:end');
+    mood.event('end');
   } catch (err) {
     // Stop and New chat abort on purpose: that is an ordinary end, not an error.
-    if (ac.signal.aborted) send('reply:end');
-    else {
+    if (ac.signal.aborted) {
+      send('reply:end');
+      mood.event('stop');
+    } else {
       const e = err instanceof BridgeError ? err : new BridgeError({ case: 'unknown', message: err instanceof Error ? err.message : String(err) });
       send('reply:error', e.info);
+      mood.event('error');
       logError(e);
     }
   } finally {
@@ -307,6 +314,7 @@ if (!app.requestSingleInstanceLock()) {
         // The renderer is already waiting on a reply; without this it would stay on Stop forever.
         const error: ReplyError = { case: 'unknown', message: `Message too long (max ${MAX_MESSAGE_LENGTH.toLocaleString('en-US')} characters).` };
         win?.webContents.send('reply:error', error);
+        mood.event('error');
         return;
       }
       if (inflight) return; // one reply at a time; the renderer swaps Send for Stop

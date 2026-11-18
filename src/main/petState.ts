@@ -21,3 +21,16 @@ export function nextState(s: PetState, e: PetEvent): PetState {
       return s === 'replied' || s === 'error' ? 'idle' : s;
   }
 }
+
+// Holds the current state and plays it only when it changes.
+export function createMood(o: { play: (s: PetState) => void }) {
+  let state: PetState = 'idle';
+  return {
+    event(e: PetEvent): void {
+      const s = nextState(state, e);
+      if (s === state) return;
+      state = s;
+      o.play(s);
+    },
+  };
+}

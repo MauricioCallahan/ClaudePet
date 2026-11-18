@@ -86,7 +86,10 @@ function createWindow(): void {
     }
   });
   w.on('closed', () => (win = null));
-  w.on('show', refreshTray);
+  w.on('show', () => {
+    refreshTray();
+    mood.shown();
+  });
   w.on('hide', refreshTray);
 }
 
@@ -140,7 +143,7 @@ const bridge: Bridge =
 let inflight: AbortController | null = null;
 let replyChat = ''; // the chat the running reply belongs to
 let running: Promise<void> = Promise.resolve(); // the current runReply, so a reopen can wait for its save
-const mood = createMood({ play: (s) => playRow(STATE_ROW[s]) }); // what the pet shows about the reply
+const mood = createMood({ play: (s) => playRow(STATE_ROW[s]), visible: () => !!win?.isVisible() }); // what the pet shows about the reply
 
 // shortcut: bridge.log grows without limit (errors only, so slowly); rotate it if it ever gets big
 function logError(e: BridgeError): void {

@@ -25,16 +25,27 @@ export function nextState(s: PetState, e: PetEvent): PetState {
 export const SETTLE_MS = 3000; // how long replied and error show before the pet goes back to idle
 
 // Holds the current state, plays it only when it changes, and settles replied and error back to idle.
-export function createMood(o: { play: (s: PetState) => void; settleMs?: number }) {
+// While the box is hidden they don't settle, so the pet still greets you with them when it is shown.
+export function createMood(o: { play: (s: PetState) => void; visible: () => boolean; settleMs?: number }) {
   let state: PetState = 'idle';
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const settleLater = () => {
+    clearTimeout(timer);
+    if ((state === 'replied' || state === 'error') && o.visible()) timer = setTimeout(() => event('settle'), o.settleMs ?? SETTLE_MS);
+  };
   const event = (e: PetEvent): void => {
     const s = nextState(state, e);
     if (s === state) return; // a repeated error keeps its running timer, so it still settles
-    clearTimeout(timer);
     state = s;
     o.play(s);
-    if (s === 'replied' || s === 'error') timer = setTimeout(() => event('settle'), o.settleMs ?? SETTLE_MS);
+    settleLater();
   };
-  return { event };
+  return {
+    event,
+    // The box was shown: replay the state (a play-once row has finished while hidden) and settle from now.
+    shown(): void {
+      o.play(state);
+      settleLater();
+    },
+  };
 }

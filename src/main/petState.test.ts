@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { playableRow, ROWS } from './petFormat';
-import { nextState, STATE_ROW, type PetEvent, type PetState } from './petState';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { FakeBridge } from './bridge';
+import { createMood, nextState, STATE_ROW, type PetEvent, type PetState } from './petState';
 
 // Every (state, event) pair: [from, event, to].
 const table: [PetState, PetEvent, PetState][] = [
@@ -42,4 +44,65 @@ test('a pet with only an idle row plays idle for every state', () => {
 test('a full sheet plays each state row, and the still look rows fall back to idle', () => {
   for (const row of Object.values(STATE_ROW)) assert.equal(playableRow(row, 11), row);
   assert.equal(playableRow(9, 11), 0);
+});
+
+// Plays one FakeBridge reply into a mood, with the same three endings as runReply in main.ts.
+const bridge = new FakeBridge({ waitMs: () => 0, wordMs: 0 });
+async function reply(mood: ReturnType<typeof createMood>, text: string, stop = false): Promise<void> {
+  const ac = new AbortController();
+  mood.event('send');
+  try {
+    for await (const _ of bridge.send('c', text, ac.signal)) if (stop) ac.abort();
+    mood.event('end');
+  } catch {
+    mood.event(ac.signal.aborted ? 'stop' : 'error');
+  }
+}
+function recorder(visible = () => true) {
+  const played: PetState[] = [];
+  return { played, mood: createMood({ play: (s) => played.push(s), visible, settleMs: 20 }) };
+}
+const settled = () => sleep(80);
+
+test('a normal reply: thinking, replied, then idle on its own', async () => {
+  const { played, mood } = recorder();
+  await reply(mood, 'hello there');
+  assert.deepEqual(played, ['thinking', 'replied']);
+  await settled();
+  assert.deepEqual(played, ['thinking', 'replied', 'idle']);
+});
+
+test('an error: thinking, error, then idle on its own', async () => {
+  const { played, mood } = recorder();
+  await reply(mood, '/fail');
+  await settled();
+  assert.deepEqual(played, ['thinking', 'error', 'idle']);
+});
+
+test('Stop: thinking, then straight back to idle', async () => {
+  const { played, mood } = recorder();
+  await reply(mood, 'one two three', true);
+  await settled();
+  assert.deepEqual(played, ['thinking', 'idle']);
+});
+
+test('a reply that ends while the box is hidden waves when the box is shown, then settles', async () => {
+  let visible = false;
+  const { played, mood } = recorder(() => visible);
+  await reply(mood, 'hello');
+  await settled();
+  assert.deepEqual(played, ['thinking', 'replied']); // no settle while hidden
+  visible = true;
+  mood.shown();
+  assert.deepEqual(played, ['thinking', 'replied', 'replied']); // replayed from its first frame
+  await settled();
+  assert.deepEqual(played, ['thinking', 'replied', 'replied', 'idle']);
+});
+
+test('a new message cancels a pending settle', async () => {
+  const { played, mood } = recorder();
+  await reply(mood, 'first');
+  mood.event('send');
+  await settled();
+  assert.deepEqual(played, ['thinking', 'replied', 'thinking']);
 });

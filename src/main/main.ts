@@ -192,6 +192,7 @@ async function runReply(id: string, text: string): Promise<void> {
 async function openChat(id: string): Promise<void> {
   inflight?.abort();
   await running;
+  mood.event('stop');
   showAndSend('chat:open', id);
 }
 
@@ -364,6 +365,7 @@ if (!app.requestSingleInstanceLock()) {
       // Switching chats ends the running reply so it cannot stream into the wrong chat.
       newChat: () => {
         inflight?.abort();
+        mood.event('stop');
         showAndSend('chat:new');
       },
       recent: () => recent(chats),

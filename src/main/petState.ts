@@ -22,15 +22,19 @@ export function nextState(s: PetState, e: PetEvent): PetState {
   }
 }
 
-// Holds the current state and plays it only when it changes.
-export function createMood(o: { play: (s: PetState) => void }) {
+export const SETTLE_MS = 3000; // how long replied and error show before the pet goes back to idle
+
+// Holds the current state, plays it only when it changes, and settles replied and error back to idle.
+export function createMood(o: { play: (s: PetState) => void; settleMs?: number }) {
   let state: PetState = 'idle';
-  return {
-    event(e: PetEvent): void {
-      const s = nextState(state, e);
-      if (s === state) return;
-      state = s;
-      o.play(s);
-    },
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const event = (e: PetEvent): void => {
+    const s = nextState(state, e);
+    if (s === state) return; // a repeated error keeps its running timer, so it still settles
+    clearTimeout(timer);
+    state = s;
+    o.play(s);
+    if (s === 'replied' || s === 'error') timer = setTimeout(() => event('settle'), o.settleMs ?? SETTLE_MS);
   };
+  return { event };
 }

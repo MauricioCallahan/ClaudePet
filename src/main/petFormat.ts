@@ -61,6 +61,9 @@ export const ROWS = [
 ];
 const MAX_ROWS = 11;
 
+// The row to play: one the sheet doesn't have (or that has no timings, like the look rows) plays idle instead.
+export const playableRow = (row: number, rows: number): number => (row < rows && ROWS[row] ? row : 0);
+
 // Reads the size from the file header only, so no image decoder is needed (Electron's nativeImage can't read WebP).
 export function sheetSize(b: Buffer): { width: number; height: number } | null {
   if (b.length < 30) return null;

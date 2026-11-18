@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { petPosition, roomForPet } from './bounds';
-import { COLUMNS, ROWS, type Pet } from './petFormat';
+import { COLUMNS, playableRow, ROWS, type Pet } from './petFormat';
 
 const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
 
@@ -97,6 +97,6 @@ export function setPetEnabled(on: boolean): void {
 // Plays one row of the sheet (0 = idle, see ROWS); a row the sheet doesn't have plays idle instead.
 export function playRow(row: number): void {
   if (!sprite || !pet) return;
-  const r = row < sprite.rows && ROWS[row] ? row : 0;
+  const r = playableRow(row, sprite.rows);
   pet.webContents.send('pet:play', { row: r, durations: ROWS[r].durations, loop: ROWS[r].loop });
 }

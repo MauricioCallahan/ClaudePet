@@ -8,9 +8,12 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
-import { loadSettings, petSettings, saveSettings } from './settings';
-import { createPet } from './petWindow';
-import { loadPet, type Pet } from './petFormat';
+import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
+import { pathToFileURL } from 'node:url';
+import { createPet, setPet, setPetEnabled } from './petWindow';
+import { COLUMNS, type Pet } from './petFormat';
+import { initPicker, openPicker, pickerChanged, type PickerItem } from './pickerWindow';
+import { ensurePetsDir, logPets, pickPet, scanPets, type PetScan } from './pets';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -185,13 +188,47 @@ async function openChat(id: string): Promise<void> {
   showAndSend('chat:open', id);
 }
 
-// shortcut: only userData\pets\<id> is looked at and a bad pet keeps the placeholder; bullet 3 adds built-in, Codex pets and the fallback
-function choosePet(id: string): Pet | undefined {
-  try {
-    return loadPet(path.join(app.getPath('userData'), 'pets', id));
-  } catch (err) {
-    console.error(`Pet "${id}" not loaded:`, (err as Error).message);
-  }
+let petScan: PetScan = { pets: [], skipped: [] };
+let petSetting = { enabled: true, id: DEFAULT_PET_ID };
+let shownPet: Pet | undefined;
+
+// Shows pet.id, or the built-in pet with the reason in the log. Before the pet window exists this only picks.
+function showChosenPet(): void {
+  const { pet, reason } = pickPet(petScan, petSetting.id);
+  if (reason) logPets(reason);
+  shownPet = pet;
+  setPet(pet);
+}
+
+// Tray → Pet → Refresh pets: picks up pets added or removed since startup.
+export function refreshPets(): void {
+  petScan = scanPets();
+  showChosenPet();
+  pickerChanged();
+}
+
+// saveSettings merges only the top level, so the whole pet object is saved each time.
+function savePetSetting(patch: Partial<typeof petSetting>): void {
+  petSetting = { ...petSetting, ...patch };
+  saveSettings({ pet: petSetting });
+}
+
+// Tray → Pet → Hide pet.
+export function togglePetHidden(): void {
+  savePetSetting({ enabled: !petSetting.enabled });
+  setPetEnabled(petSetting.enabled);
+  refreshTray();
+}
+
+const pickerItems = (): PickerItem[] =>
+  petScan.pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
+
+// From the picker: only an id that is in the list (the picker's id is already checked to be a safe name).
+function choosePetById(id: string): void {
+  if (!petScan.pets.some((p) => p.manifest.id === id)) return;
+  savePetSetting({ id });
+  showChosenPet();
+  pickerChanged();
 }
 
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
@@ -306,8 +343,12 @@ if (!app.requestSingleInstanceLock()) {
     });
     createWindow();
     // After the box has loaded, so it is always the first window (e2e's firstWindow relies on it).
-    const petSetting = petSettings(loadSettings());
-    if (petSetting.enabled) win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, choosePet(petSetting.id)));
+    ensurePetsDir();
+    petScan = scanPets();
+    petSetting = petSettings(loadSettings());
+    showChosenPet();
+    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled));
+    initPicker({ list: pickerItems, choose: choosePetById });
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),
@@ -319,6 +360,10 @@ if (!app.requestSingleInstanceLock()) {
       },
       recent: () => recent(chats),
       openChat: (id) => void openChat(id),
+      choosePet: openPicker,
+      refreshPets,
+      isPetHidden: () => !petSetting.enabled,
+      togglePetHidden,
     });
     const { hotkey: saved } = loadSettings();
     registerHotkey(typeof saved === 'string' && saved ? saved : DEFAULT_HOTKEY);

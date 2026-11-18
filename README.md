@@ -15,9 +15,18 @@ It runs Claude runs in the background, signing in with your existing Claude Pr
 - Claude Code installed and signed in
 
 
+## Adding a pet
+
+ClaudePet comes with Pip. To add another pet, use either:
+
+- **Copy its folder** into `%APPDATA%\ClaudePet\pets\` (the folder name must be the pet's `id`).
+- **Use Codex's installer:** `npx codex-pets add <id>`. ClaudePet also reads Codex's pets folder (`%CODEX_HOME%\pets\`, or `%USERPROFILE%\.codex\pets\`) but never changes it.
+
+Then open the **Chats** tray menu, choose **Pet → Refresh pets**, and pick the pet in **Pet → Choose pet…**. A folder that isn't a valid pet is skipped, and the reason is written to `%APPDATA%\ClaudePet\pets.log`.
+
 ## Pet format
 
-ClaudePet pets use the same package format as Codex Pets, so a Codex pet folder or zip (for example Crosspost Buddy) works as is.
+ClaudePet pets use the same package format as Codex Pets, so a Codex pet folder or zip works as is.
 
 ### Layout
 
@@ -36,10 +45,10 @@ Built-in pets live in `assets/pets/`, installed pets in `%APPDATA%\ClaudePet\pet
 
 ```json
 {
-  "id": "crosspost-buddy",
-  "displayName": "Crosspost Buddy",
-  "description": "A cool little robot mascot with sunglasses.",
-  "spritesheetPath": "spritesheet.webp"
+  "id": "pip",
+  "displayName": "Pip",
+  "description": "A round little blob that keeps you company while you chat with Claude.",
+  "spritesheetPath": "spritesheet.png"
 }
 ```
 

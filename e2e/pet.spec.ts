@@ -92,8 +92,14 @@ test.describe('with the pet off in settings', () => {
   test.beforeAll(() => launch({ pet: { enabled: false } }));
   test.afterAll(quit);
 
-  test('only the box opens', async () => {
-    await page.waitForTimeout(1000); // the pet would be up by now: it opens right after the box loads
-    expect((await windows()).count).toBe(1);
+  // The pet window exists (so "Hide pet" can be turned off without a restart) but never shows.
+  test('only the box shows', async () => {
+    await expect.poll(async () => (await windows()).pet).toBeTruthy();
+    await page.waitForTimeout(1000); // the pet would be up by now: it shows right after the box loads
+    expect((await windows()).petVisible).toBe(false);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))!.hide());
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))!.show());
+    await page.waitForTimeout(300);
+    expect((await windows()).petVisible).toBe(false);
   });
 });

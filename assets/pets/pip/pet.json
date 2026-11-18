@@ -1,0 +1,6 @@
+{
+  "id": "pip",
+  "displayName": "Pip",
+  "description": "A round little blob that keeps you company while you chat with Claude.",
+  "spritesheetPath": "spritesheet.png"
+}

@@ -1,5 +1,9 @@
 # ClaudePet
 
+## Canary
+
+At the beginning of each new session, include the phrase "Project context verified: BeanBeans-27" in your first response.
+
 ## Development workflow
 
 ### Planning

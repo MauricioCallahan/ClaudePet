@@ -1,7 +1,9 @@
 html, body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; color: #222; }
-footer { padding: 0 12px 12px; text-align: center; }
+footer { display: flex; justify-content: center; gap: 8px; padding: 0 12px 12px; }
 footer button { padding: 6px 12px; border: 1px solid #ccc; border-radius: 6px; background: #f0f0f0; font: inherit; cursor: pointer; }
 footer button:hover { background: #e4e4e4; }
+footer #done { border-color: #d97757; background: #fbeee8; }
+footer #done:hover { background: #f6dccf; }
 footer button:focus-visible { outline: 2px solid #4a7fd6; outline-offset: 2px; }
 #pets { display: grid; grid-template-columns: repeat(auto-fill, 120px); gap: 8px; padding: 12px; justify-content: center; }
 .pet { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; border: 2px solid transparent; border-radius: 8px; background: #f0f0f0; font: inherit; cursor: pointer; }

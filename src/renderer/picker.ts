@@ -36,5 +36,6 @@ async function render(): Promise<void> {
 }
 
 document.getElementById('install')!.addEventListener('click', () => picker.install());
+document.getElementById('done')!.addEventListener('click', () => window.close()); // choosing and installing already saved the pet
 picker.onChanged(() => void render());
 void render();

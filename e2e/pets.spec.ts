@@ -162,3 +162,11 @@ test('a zip dropped on the pet installs it, and a bad one is logged and changes 
   await expect.poll(() => petsLog()).toMatch(/Could not install .*bad\.zip: not a readable zip/);
   expect(await shownPet()).toBe('dropped');
 });
+
+test('Done closes the picker, and the pet stays chosen', async () => {
+  const p = await picker();
+  await p.click('#done');
+  await expect.poll(() => app.windows().some((w) => w.url().endsWith('picker.html'))).toBe(false);
+  expect(await shownPet()).toBe('dropped');
+  await picker(); // it opens again
+});

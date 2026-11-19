@@ -30,12 +30,13 @@ At the beginning of each new session, include the phrase "Project context verifi
 ### After the bullet is complete (all 5 tasks committed)
 1. Run `npm run e2e` (once it exists) and make sure it passes, then run /ponytail-review once, over the combined diff of that bullet's branch
    (`git diff development...HEAD`), and read every finding.
-2. **Must fix** (bug, security, data loss, crash): do not ask. Plan the fix,
-   implement it, and commit it as `M1-3 review: <finding>`.
+2. **Must fix** (bug, security, data loss, crash): do not ask. Plan the fix and implement it.
 3. **Should fix / Nice to have**, or anything that changes a later task: stop and
    ask me before doing it. List these findings with their numbers so I can
    answer "fix 2 and 5".
-4. Once I've answered and the fixes are committed, open the PR (see Branching).
+4. Once I've answered, put every review fix (must fix and the ones I chose) in
+   **one** commit, `M1-3 review: <short summary>`, with the findings listed in its
+   body. Not one commit per finding. Then open the PR (see Branching).
    Start the next bullet only after that PR is merged.
 
 ## Answer rules

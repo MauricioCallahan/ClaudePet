@@ -8,10 +8,14 @@ import { DEFAULT_PET_ID } from './settings';
 // Installed pets, one folder per pet named after its id: %APPDATA%\ClaudePet\pets\<id>\.
 export const userPetsDir = () => path.join(app.getPath('userData'), 'pets');
 
+// Where a zip install unpacks before it is renamed into the pets folder.
+export const petsTmpDir = () => path.join(app.getPath('userData'), 'pets-tmp');
+
 // A folder we can't create only means no installed pets; it must not stop the app.
 export function ensurePetsDir(): void {
   try {
     fs.mkdirSync(userPetsDir(), { recursive: true });
+    fs.rmSync(petsTmpDir(), { recursive: true, force: true }); // left by an install that was killed
   } catch (err) {
     console.error('Could not create the pets folder:', (err as Error).message);
   }

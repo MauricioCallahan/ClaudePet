@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
-import { checkSheet, MAX_SHEET_BYTES, parsePetJson, sheetSize, type PetManifest } from './petFormat';
+import { checkSheet, loadPet, MAX_SHEET_BYTES, parsePetJson, sheetSize, type PetManifest } from './petFormat';
 
 // Checks a pet zip (Codex's format, see "Pet format" in the README) without unpacking it.
 
@@ -96,5 +98,59 @@ export async function readPetZip(zipPath: string): Promise<PetZip> {
     return { manifest, root, rows, files: entries.map((e) => ({ name: e.fileName, size: e.uncompressedSize })) };
   } finally {
     zip.close();
+  }
+}
+
+// The pet is already installed and the caller did not say to replace it.
+export class PetExistsError extends Error {
+  constructor(readonly id: string) {
+    super(`a pet named "${id}" is already installed`);
+  }
+}
+
+// Unpacks the files under `root` into `dest`. yauzl stops a file that unpacks to more than its declared size.
+async function extract(zipPath: string, root: string, dest: string): Promise<void> {
+  const zip = await openZip(zipPath);
+  try {
+    for (const e of (await listEntries(zip)).filter((e) => !e.fileName.endsWith('/'))) {
+      const target = path.join(dest, e.fileName.slice(root.length));
+      const rel = path.relative(dest, target);
+      if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`the zip has an unsafe file name "${e.fileName}"`); // yauzl rejects these too
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => zip.openReadStream(e, (err, s) => (err ? reject(err) : resolve(s))));
+      await pipeline(stream, fs.createWriteStream(target));
+    }
+  } finally {
+    zip.close();
+  }
+}
+
+// Checks the zip, unpacks it beside the pets folder and renames it into place, so a failure leaves nothing half-installed.
+export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot: string; builtInDir: string; replace?: boolean }): Promise<PetManifest> {
+  const { manifest, root } = await readPetZip(zipPath);
+  const dest = path.join(o.petsDir, manifest.id);
+  if (fs.existsSync(path.join(o.builtInDir, manifest.id))) throw new Error(`"${manifest.id}" is a built-in pet`);
+  if (fs.existsSync(dest) && !o.replace) throw new PetExistsError(manifest.id);
+
+  fs.mkdirSync(o.tmpRoot, { recursive: true });
+  const tmp = fs.mkdtempSync(path.join(o.tmpRoot, 'install-')); // same drive as the pets folder, so the rename is atomic
+  try {
+    const staged = path.join(tmp, 'pet');
+    await extract(zipPath, root, staged);
+    loadPet(staged); // the same check the scan does, on what was actually written
+    fs.mkdirSync(o.petsDir, { recursive: true });
+    if (fs.existsSync(dest)) {
+      const old = path.join(tmp, 'old');
+      fs.renameSync(dest, old);
+      try {
+        fs.renameSync(staged, dest);
+      } catch (err) {
+        fs.renameSync(old, dest); // keep the pet that was there
+        throw err;
+      }
+    } else fs.renameSync(staged, dest);
+    return manifest;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true }); // the failed install's files, or the replaced pet
   }
 }

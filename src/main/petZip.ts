@@ -16,8 +16,6 @@ const MAX_JSON_BYTES = 64 * 1024;
 export interface PetZip {
   manifest: PetManifest;
   root: string; // '' when pet.json is at the top level, else 'folder/'
-  rows: number;
-  files: { name: string; size: number }[]; // every file, names as in the zip
 }
 
 function openZip(zipPath: string): Promise<yauzl.ZipFile> {
@@ -94,8 +92,8 @@ export async function readPetZip(zipPath: string): Promise<PetZip> {
     if (sheet.uncompressedSize > MAX_SHEET_BYTES) throw new Error('the sprite sheet is larger than 20 MB');
     const size = sheetSize(await readStart(zip, sheet, 30));
     if (!size) throw new Error('the sprite sheet is not a PNG or WebP image');
-    const { rows } = checkSheet(size);
-    return { manifest, root, rows, files: entries.map((e) => ({ name: e.fileName, size: e.uncompressedSize })) };
+    checkSheet(size);
+    return { manifest, root };
   } finally {
     zip.close();
   }
@@ -108,11 +106,11 @@ export class PetExistsError extends Error {
   }
 }
 
-// Unpacks the files under `root` into `dest`. yauzl stops a file that unpacks to more than its declared size.
-async function extract(zipPath: string, root: string, dest: string): Promise<void> {
+// Unpacks only the named files, so a pet folder holds nothing but its manifest and sheet. yauzl stops a file that unpacks to more than its declared size.
+async function extract(zipPath: string, root: string, keep: string[], dest: string): Promise<void> {
   const zip = await openZip(zipPath);
   try {
-    for (const e of (await listEntries(zip)).filter((e) => !e.fileName.endsWith('/'))) {
+    for (const e of (await listEntries(zip)).filter((e) => keep.includes(e.fileName))) {
       const target = path.join(dest, e.fileName.slice(root.length));
       const rel = path.relative(dest, target);
       if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error(`the zip has an unsafe file name "${e.fileName}"`); // yauzl rejects these too
@@ -128,6 +126,7 @@ async function extract(zipPath: string, root: string, dest: string): Promise<voi
 // Checks the zip, unpacks it beside the pets folder and renames it into place, so a failure leaves nothing half-installed.
 export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot: string; builtInDir: string; replace?: boolean }): Promise<PetManifest> {
   const { manifest, root } = await readPetZip(zipPath);
+  const keep = [root + 'pet.json', root + manifest.spritesheetPath];
   const dest = path.join(o.petsDir, manifest.id);
   if (fs.existsSync(path.join(o.builtInDir, manifest.id))) throw new Error(`"${manifest.id}" is a built-in pet`);
   if (fs.existsSync(dest) && !o.replace) throw new PetExistsError(manifest.id);
@@ -136,7 +135,7 @@ export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot:
   const tmp = fs.mkdtempSync(path.join(o.tmpRoot, 'install-')); // same drive as the pets folder, so the rename is atomic
   try {
     const staged = path.join(tmp, 'pet');
-    await extract(zipPath, root, staged);
+    await extract(zipPath, root, keep, staged);
     loadPet(staged); // the same check the scan does, on what was actually written
     fs.mkdirSync(o.petsDir, { recursive: true });
     if (fs.existsSync(dest)) {
@@ -151,6 +150,10 @@ export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot:
     } else fs.renameSync(staged, dest);
     return manifest;
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true }); // the failed install's files, or the replaced pet
+    try {
+      fs.rmSync(tmp, { recursive: true, force: true }); // the failed install's files, or the replaced pet
+    } catch {
+      // a locked file must not turn a finished install into an error; the next start clears pets-tmp
+    }
   }
 }

@@ -37,8 +37,6 @@ test('readPetZip accepts a pet at the top level of the zip', async () => {
   const r = await readPetZip(await makeZip(good()));
   assert.equal(r.manifest.id, 'valid');
   assert.equal(r.root, '');
-  assert.equal(r.rows, 11);
-  assert.deepEqual(r.files.map((f) => f.name), ['pet.json', 'spritesheet.png']);
 });
 
 test('readPetZip accepts a pet inside one folder', async () => {
@@ -197,4 +195,29 @@ test('installPet cleans up when the pets folder cannot be made', withInstall(asy
   fs.writeFileSync(o.petsDir, 'a file where the folder should be');
   await assert.rejects(installPet(await makeZip(good()), o));
   assert.deepEqual(leftovers(o), []);
+}));
+
+test('installPet still succeeds when the old pet cannot be deleted afterwards', withInstall(async (o) => {
+  await installPet(await makeZip(good()), o);
+  const next = await makeZip({ ...good(), 'pet.json': json({ displayName: 'Second' }) });
+  const rm = fs.rmSync;
+  fs.rmSync = () => {
+    throw new Error('EBUSY: file is locked');
+  };
+  try {
+    assert.equal((await installPet(next, { ...o, replace: true })).displayName, 'Second');
+  } finally {
+    fs.rmSync = rm;
+  }
+  assert.match(fs.readFileSync(path.join(o.petsDir, 'valid', 'pet.json'), 'utf8'), /Second/);
+}));
+
+test('installPet unpacks only pet.json and the sprite sheet', withInstall(async (o) => {
+  await installPet(await makeZip({ ...good(), 'notes.txt': 'hi', 'junk/more.bin': 'x' }), o);
+  assert.deepEqual(fs.readdirSync(path.join(o.petsDir, 'valid')).sort(), ['pet.json', 'spritesheet.png']);
+}));
+
+test('installPet keeps a sprite sheet in a sub-folder of the pet', withInstall(async (o) => {
+  await installPet(await makeZip({ 'pet.json': json({ spritesheetPath: 'art/sheet.png' }), 'art/sheet.png': fixture('valid', 'spritesheet.png') }), o);
+  assert.ok(fs.existsSync(path.join(o.petsDir, 'valid', 'art', 'sheet.png')));
 }));

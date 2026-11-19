@@ -111,11 +111,13 @@ async function zipFile(name: string, over: object = {}): Promise<string> {
   fs.writeFileSync(file, Buffer.concat(chunks));
   return file;
 }
-const stubDialogs = (zip: string) =>
-  app.evaluate(({ dialog }, f) => {
+// `answer` is the button Replace? gets: 0 replaces, 1 cancels. `asked` counts how often it was asked.
+const stubDialogs = (zip: string, answer = 0) =>
+  app.evaluate(({ dialog }, [f, a]) => {
     dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [f] })) as typeof dialog.showOpenDialog;
-    dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as typeof dialog.showMessageBox;
-  }, zip);
+    (globalThis as any).asked = 0;
+    dialog.showMessageBox = (async () => ((globalThis as any).asked++, { response: a as number, checkboxChecked: false })) as typeof dialog.showMessageBox;
+  }, [zip, answer] as const);
 const names = (p: Page) => p.$$eval('.pet .name', (ns) => ns.map((n) => n.textContent));
 
 test('Install pet from zip… in the picker installs the pet and shows it at once', async () => {
@@ -135,6 +137,15 @@ test('installing the same pet again replaces it', async () => {
   await expect.poll(() => names(p)).toContain('Zipped again');
   expect(await names(p)).not.toContain('Zipped');
   await expect.poll(shownPet).toBe('zipped');
+});
+
+test('cancelling Replace? leaves the installed pet as it was', async () => {
+  const p = await picker();
+  await stubDialogs(await zipFile('cancelled.zip', { displayName: 'Cancelled' }), 1);
+  await p.click('#install');
+  await expect.poll(() => app.evaluate(() => (globalThis as any).asked)).toBe(1);
+  expect(fs.readFileSync(path.join(profile, 'pets', 'zipped', 'pet.json'), 'utf8')).toContain('Zipped again');
+  expect(await names(p)).not.toContain('Cancelled');
 });
 
 test('a zip dropped on the pet installs it, and a bad one is logged and changes nothing', async () => {

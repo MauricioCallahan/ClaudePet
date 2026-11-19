@@ -247,7 +247,7 @@ let installing = false;
 // Checks a pet zip, asks before replacing an installed pet, installs it, and shows it in the box and the picker.
 // A bad zip changes nothing and is reported in a tray balloon and pets.log.
 async function installPetFromZip(zipPath: string): Promise<void> {
-  if (installing) return; // one install at a time
+  if (installing) return notify('Install in progress', 'Wait for the current pet install to finish.'); // one install at a time
   installing = true;
   try {
     const { manifest } = await readPetZip(zipPath);

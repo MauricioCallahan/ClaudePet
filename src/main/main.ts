@@ -396,8 +396,8 @@ if (!app.requestSingleInstanceLock()) {
     petScan = scanPets();
     petSetting = petSettings(loadSettings());
     showChosenPet();
-    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled));
-    initPicker({ list: pickerItems, choose: choosePetById, install: () => void installPetDialog() });
+    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled, (p) => void installPetFromZip(p)));
+    initPicker({ list: pickerItems, choose: choosePetById, install: () => void installPetDialog(), drop: (p) => void installPetFromZip(p) });
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),

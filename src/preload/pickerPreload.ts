@@ -1,4 +1,13 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
+
+// A file dropped on the page: preventDefault stops the window from opening it, and only main gets the path.
+// Done here because a File does not cross contextBridge, and getPathForFile needs the real one.
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const file = e.dataTransfer?.files[0];
+  if (file) ipcRenderer.send('picker:drop', webUtils.getPathForFile(file));
+});
 
 // The picker page gets only this, none of the chat API.
 contextBridge.exposeInMainWorld('picker', {

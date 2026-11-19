@@ -29,7 +29,7 @@ function makeRoom(box: BrowserWindow): void {
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
 // shortcut: the whole 96x104 rectangle takes clicks, even transparent pixels; add setIgnoreMouseEvents hit-testing if it gets in the way
 // Without a valid pet the window keeps the placeholder picture. A disabled pet's window exists but stays hidden.
-export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet | undefined, enabled: boolean): void {
+export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet | undefined, enabled: boolean, onDrop: (zipPath: string) => void): void {
   sprite = chosen;
   shown = enabled;
   owner = box;
@@ -51,6 +51,7 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
     },
   });
   pet.loadFile(path.join(__dirname, '../renderer/pet.html'));
+  pet.webContents.on('will-navigate', (e) => e.preventDefault()); // a file dropped on the pet must not replace its page
   pet.webContents.once('did-finish-load', () => {
     ready = true;
     setPet(sprite);
@@ -74,6 +75,10 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
   });
   ipcMain.on('pet:click', (e) => {
     if (e.sender === pet?.webContents) onClick();
+  });
+  // A pet zip dropped on the pet; the window stays unfocusable.
+  ipcMain.on('pet:drop', (e, zipPath: unknown) => {
+    if (e.sender === pet?.webContents && typeof zipPath === 'string' && zipPath) onDrop(zipPath);
   });
 }
 

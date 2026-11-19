@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { petPosition, roomForPet } from './bounds';
-import { COLUMNS, ROWS, type Pet } from './petFormat';
+import { COLUMNS, playableRow, ROWS, type Pet } from './petFormat';
 
 const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
 
@@ -12,6 +12,7 @@ let sprite: Pet | undefined;
 let shown = true; // pet.enabled: "Hide pet" in the tray turns it off
 let owner: BrowserWindow | null = null; // the chat box the pet stands on
 let ready = false; // the pet page has loaded and can take a sheet
+let current = 0; // the row the pet state wants (see STATE_ROW)
 
 function place(box: BrowserWindow): void {
   const b = box.getBounds();
@@ -77,12 +78,12 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
   });
 }
 
-// Swaps the sheet and starts on idle; before the page has loaded, its load handler does it.
+// Swaps the sheet and replays the current state on it; before the page has loaded, its load handler does it.
 export function setPet(p: Pet | undefined): void {
   sprite = p;
   if (!p || !pet || !ready) return;
   pet.webContents.send('pet:sheet', { url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows });
-  playRow(0);
+  playRow(current);
 }
 
 // The pet still only shows while the box does.
@@ -95,8 +96,10 @@ export function setPetEnabled(on: boolean): void {
 }
 
 // Plays one row of the sheet (0 = idle, see ROWS); a row the sheet doesn't have plays idle instead.
+// Kept even with no pet yet, so the state shows once the page loads or the pet is swapped.
 export function playRow(row: number): void {
-  if (!sprite || !pet) return;
-  const r = row < sprite.rows && ROWS[row] ? row : 0;
+  current = row;
+  if (!sprite || !pet || !ready) return;
+  const r = playableRow(row, sprite.rows);
   pet.webContents.send('pet:play', { row: r, durations: ROWS[r].durations, loop: ROWS[r].loop });
 }

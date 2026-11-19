@@ -103,3 +103,51 @@ test.describe('with the pet off in settings', () => {
     expect((await windows()).petVisible).toBe(false);
   });
 });
+
+// The fake bridge waits 1-3 s before it replies, long enough to see thinking, press Stop or hide the box.
+test.describe('the pet shows what Claude is doing', () => {
+  test.beforeAll(() => launch());
+  test.afterAll(quit);
+
+  // Sprite rows (see STATE_ROW): 0 idle, 7 thinking, 3 replied, 5 error.
+  const row = () => app.windows().find((p) => p.url().endsWith('pet.html'))?.evaluate(() => document.getElementById('pet')!.dataset.row);
+  const ask = async (text: string) => {
+    await page.fill('#input', text);
+    await page.press('#input', 'Enter');
+  };
+  const settles = { timeout: 10_000 }; // replied and error show for 3 s first
+  const box = (fn: 'hide' | 'show') =>
+    app.evaluate(({ BrowserWindow }, fn) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))![fn](), fn);
+
+  test('a reply: thinking, then replied, then idle on its own', async () => {
+    await expect.poll(row).toBe('0');
+    await ask('hello pet');
+    await expect.poll(row).toBe('7');
+    await expect.poll(row).toBe('3');
+    await expect.poll(row, settles).toBe('0');
+  });
+
+  test('an error: thinking, then error, then idle on its own', async () => {
+    await ask('/fail');
+    await expect.poll(row).toBe('7');
+    await expect.poll(row).toBe('5');
+    await expect.poll(row, settles).toBe('0');
+  });
+
+  test('Stop: thinking, then straight back to idle', async () => {
+    await ask('hello again');
+    await expect.poll(row).toBe('7');
+    await page.click('#send'); // Send turns into Stop while Claude replies
+    await expect.poll(row).toBe('0');
+  });
+
+  test('a reply that ends while the box is hidden is still shown when the box comes back', async () => {
+    await ask('while hidden');
+    await box('hide');
+    await expect(page.locator('#send')).toHaveText('Send', { timeout: 10_000 }); // the reply has ended
+    await page.waitForTimeout(4000); // longer than replied shows for while the box is visible
+    expect(await row()).toBe('3');
+    await box('show');
+    await expect.poll(row, settles).toBe('0');
+  });
+});

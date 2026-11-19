@@ -44,7 +44,7 @@ export function parsePetJson(text: string): PetManifest {
 
 export const CELL = { width: 192, height: 208 };
 export const COLUMNS = 8;
-const MAX_SHEET_BYTES = 20 * 1024 * 1024; // Codex's limit
+export const MAX_SHEET_BYTES = 20 * 1024 * 1024; // Codex's limit
 
 // Codex's rows, top to bottom, with its per-frame timings (ms). Rows 9-10 (look directions) are still poses and not played.
 const ms = (n: number, each: number, last: number) => [...Array(n - 1).fill(each), last];

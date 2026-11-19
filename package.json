@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/vendor.js && tsc && tsc -p tsconfig.renderer.json && node scripts/copy-assets.js",
     "dev": "npm run build && electron .",
-    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js dist/main/chats.test.js dist/main/bridge.test.js dist/main/claudeBridge.test.js dist/main/links.test.js dist/main/errors.test.js dist/main/petFormat.test.js dist/main/pets.test.js dist/main/petState.test.js dist/renderer/scroll.test.js dist/renderer/markdown.test.js dist/renderer/codeBlocks.test.js dist/renderer/sprite.test.js",
+    "test": "npm run build && node --test dist/main/bounds.test.js dist/main/settings.test.js dist/main/chats.test.js dist/main/bridge.test.js dist/main/claudeBridge.test.js dist/main/links.test.js dist/main/errors.test.js dist/main/petFormat.test.js dist/main/pets.test.js dist/main/petState.test.js dist/main/petZip.test.js dist/renderer/scroll.test.js dist/renderer/markdown.test.js dist/renderer/codeBlocks.test.js dist/renderer/sprite.test.js",
     "e2e": "npm run build && playwright test"
   },
   "license": "MIT",
@@ -14,10 +14,16 @@
   "devDependencies": {
     "@playwright/test": "^1.65.0",
     "@types/jsdom": "^30.0.0",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "dompurify": "^3.4.17",
     "electron": "^45.2.3",
     "jsdom": "^29.1.1",
     "marked": "^18.1.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "yazl": "^3.3.1"
+  },
+  "dependencies": {
+    "yauzl": "^3.4.0"
   }
 }

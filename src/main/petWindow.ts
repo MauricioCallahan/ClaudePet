@@ -1,8 +1,7 @@
 import { BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { petPosition, roomForPet } from './bounds';
-import { COLUMNS, playableRow, ROWS, type Pet } from './petFormat';
+import { COLUMNS, playableRow, ROWS, sheetUrl, type Pet } from './petFormat';
 
 const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
 
@@ -82,7 +81,7 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
 export function setPet(p: Pet | undefined): void {
   sprite = p;
   if (!p || !pet || !ready) return;
-  pet.webContents.send('pet:sheet', { url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows });
+  pet.webContents.send('pet:sheet', { url: sheetUrl(p), columns: COLUMNS, rows: p.rows });
   playRow(current);
 }
 

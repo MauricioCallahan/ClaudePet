@@ -10,6 +10,7 @@ export interface TrayActions {
   recent(): Chat[];
   openChat(id: string): void;
   choosePet(): void;
+  installPet(): void;
   isPetHidden(): boolean;
   togglePetHidden(): void;
   refreshPets(): void;
@@ -42,6 +43,7 @@ export function refreshTray(): void {
         label: 'Pet',
         submenu: [
           { label: 'Choose pet…', click: actions.choosePet },
+          { label: 'Install pet from zip…', click: actions.installPet },
           { label: 'Hide pet', type: 'checkbox', checked: actions.isPetHidden(), click: actions.togglePetHidden },
           { type: 'separator' },
           { label: 'Refresh pets', click: actions.refreshPets },

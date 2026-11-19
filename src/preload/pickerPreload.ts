@@ -4,5 +4,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('picker', {
   list: (): Promise<unknown> => ipcRenderer.invoke('picker:list'),
   choose: (id: string): void => ipcRenderer.send('picker:choose', id),
+  install: (): void => ipcRenderer.send('picker:install'),
   onChanged: (cb: () => void): void => void ipcRenderer.on('picker:changed', () => cb()),
 });

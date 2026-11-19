@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { isPetId } from './settings';
 
 // The pet package format (see "Pet format" in the README), shared by the pets folder, the Codex folder and zip installs.
@@ -92,6 +93,17 @@ export function checkSheet(size: { width: number; height: number }): { rows: num
       `the sprite sheet is ${size.width}x${size.height}; expected ${COLUMNS * CELL.width} wide and ${CELL.height} x rows tall, 1 to ${MAX_ROWS} rows (${COLUMNS * CELL.width}x${MAX_ROWS * CELL.height} for a full sheet)`,
     );
   return { rows };
+}
+
+// The sheet's file URL; its mtime makes a replaced pet show its new picture instead of the cached one.
+export function sheetUrl(p: Pet): string {
+  let v = 0;
+  try {
+    v = Math.floor(fs.statSync(p.sheetPath).mtimeMs);
+  } catch {
+    // no mtime just means no cache-busting
+  }
+  return `${pathToFileURL(p.sheetPath).href}?v=${v}`;
 }
 
 export interface Pet {

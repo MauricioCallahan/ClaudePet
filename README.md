@@ -17,7 +17,9 @@ It runs Claude runs in the background, signing in with your existing Claude Pr
 
 ## Adding a pet
 
-ClaudePet comes with Pip. To add another pet, use either:
+ClaudePet comes with Pip. To add another pet, use any of these:
+
+- **Install a zip:** open the **Chats** tray menu and choose **Pet → Install pet from zip…** (or use the same button in **Pet → Choose pet…**), then pick the `.zip` or `.claudepet` file. You can also drop the zip onto the pet or the picker. The pet is installed and shown at once. If it is already installed you are asked before it is replaced, and a zip that isn't a valid pet is reported in a tray message and in `pets.log`.
 
 - **Copy its folder** into `%APPDATA%\ClaudePet\pets\` (the folder name must be the pet's `id`).
 - **Use Codex's installer:** `npx codex-pets add <id>`. ClaudePet also reads Codex's pets folder (`%CODEX_HOME%\pets\`, or `%USERPROFILE%\.codex\pets\`) but never changes it.

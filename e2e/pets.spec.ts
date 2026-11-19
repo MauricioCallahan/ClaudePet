@@ -2,6 +2,7 @@ import { test, expect, _electron, type ElectronApplication, type Page } from '@p
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import yazl from 'yazl';
 
 // Installed pets: the pets folder, the built-in pet, ClaudePet's and Codex's folders, the picker, and the fallback.
 test.describe.configure({ mode: 'serial' });
@@ -95,4 +96,58 @@ test('deleting the chosen pet and pressing Refresh falls back to the built-in pe
   // The setting stays, so the pet comes back if its folder does.
   expect(JSON.parse(fs.readFileSync(path.join(profile, 'settings.json'), 'utf8')).pet.id).toBe('valid');
   expect(petsLog()).toContain('Pet "valid" is not installed; showing "pip" instead');
+});
+
+// Installing from a zip. The file and confirm dialogs are native, so main's are stubbed; the drop is sent as the pet page's own message.
+async function zipFile(name: string, over: object = {}): Promise<string> {
+  const z = new yazl.ZipFile();
+  const meta = { ...JSON.parse(fs.readFileSync(path.join(fixture('valid'), 'pet.json'), 'utf8')), id: 'zipped', displayName: 'Zipped', ...over };
+  z.addBuffer(Buffer.from(JSON.stringify(meta)), 'pet.json');
+  z.addFile(path.join(fixture('valid'), 'spritesheet.png'), 'spritesheet.png');
+  z.end();
+  const chunks: Buffer[] = [];
+  for await (const c of z.outputStream) chunks.push(c as Buffer);
+  const file = path.join(profile, name);
+  fs.writeFileSync(file, Buffer.concat(chunks));
+  return file;
+}
+const stubDialogs = (zip: string) =>
+  app.evaluate(({ dialog }, f) => {
+    dialog.showOpenDialog = (async () => ({ canceled: false, filePaths: [f] })) as typeof dialog.showOpenDialog;
+    dialog.showMessageBox = (async () => ({ response: 0, checkboxChecked: false })) as typeof dialog.showMessageBox;
+  }, zip);
+const names = (p: Page) => p.$$eval('.pet .name', (ns) => ns.map((n) => n.textContent));
+
+test('Install pet from zip… in the picker installs the pet and shows it at once', async () => {
+  const p = await picker();
+  await stubDialogs(await zipFile('zipped.zip'));
+  await p.click('#install');
+  await expect.poll(shownPet).toBe('zipped');
+  await expect.poll(() => listed(p)).toEqual(['pip', 'zipped*', 'extra-fields']);
+  expect(fs.readdirSync(path.join(profile, 'pets', 'zipped')).sort()).toEqual(['pet.json', 'spritesheet.png']);
+  expect(fs.readdirSync(path.join(profile, 'pets-tmp'))).toEqual([]);
+});
+
+test('installing the same pet again replaces it', async () => {
+  const p = await picker();
+  await stubDialogs(await zipFile('zipped2.zip', { displayName: 'Zipped again' }));
+  await p.click('#install');
+  await expect.poll(() => names(p)).toContain('Zipped again');
+  expect(await names(p)).not.toContain('Zipped');
+  await expect.poll(shownPet).toBe('zipped');
+});
+
+test('a zip dropped on the pet installs it, and a bad one is logged and changes nothing', async () => {
+  const drop = (zip: string) =>
+    app.evaluate(({ BrowserWindow, ipcMain }, f) => {
+      const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().endsWith('pet.html'))!;
+      ipcMain.emit('pet:drop', { sender: w.webContents }, f);
+    }, zip);
+  await drop(await zipFile('dropped.zip', { id: 'dropped', displayName: 'Dropped' }));
+  await expect.poll(shownPet).toBe('dropped');
+  const bad = path.join(profile, 'bad.zip');
+  fs.writeFileSync(bad, 'not a zip');
+  await drop(bad);
+  await expect.poll(() => petsLog()).toMatch(/Could not install .*bad\.zip: not a readable zip/);
+  expect(await shownPet()).toBe('dropped');
 });

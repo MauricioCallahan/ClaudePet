@@ -67,7 +67,7 @@ test.describe('a valid pet', () => {
       const img = new Image();
       img.src = url;
       await img.decode();
-      return `${url.endsWith('/pets/valid/spritesheet.png')} ${img.naturalWidth}x${img.naturalHeight}`;
+      return `${/\/pets\/valid\/spritesheet\.png(\?v=\d+)?$/.test(url)} ${img.naturalWidth}x${img.naturalHeight}`;
     });
     expect(size).toBe('true 1536x2288');
   });

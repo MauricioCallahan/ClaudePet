@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, screen, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
 import { deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
 import fs from 'node:fs';
@@ -9,12 +9,12 @@ import { BridgeError, logLine, type ReplyError } from './errors';
 import { fitPosition } from './bounds';
 import { isWebUrl } from './links';
 import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
-import { pathToFileURL } from 'node:url';
 import { createPet, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
-import { COLUMNS, type Pet } from './petFormat';
-import { initPicker, openPicker, pickerChanged, type PickerItem } from './pickerWindow';
-import { ensurePetsDir, logPets, pickPet, scanPets, type PetScan } from './pets';
+import { COLUMNS, sheetUrl, type Pet } from './petFormat';
+import { initPicker, openPicker, pickerChanged, pickerWindow, type PickerItem } from './pickerWindow';
+import { builtInPetsDir, ensurePetsDir, logPets, petsTmpDir, pickPet, scanPets, userPetsDir, type PetScan } from './pets';
+import { installPet, readPetZip } from './petZip';
 import { createTray, destroyTray, notify, refreshTray } from './tray';
 
 let win: BrowserWindow | null = null;
@@ -232,7 +232,7 @@ export function togglePetHidden(): void {
 }
 
 const pickerItems = (): PickerItem[] =>
-  petScan.pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
+  petScan.pets.map((p) => ({ id: p.manifest.id, displayName: p.manifest.displayName, url: sheetUrl(p), columns: COLUMNS, rows: p.rows, chosen: p === shownPet }));
 
 // From the picker: only an id that is in the list (the picker's id is already checked to be a safe name).
 function choosePetById(id: string): void {
@@ -240,6 +240,43 @@ function choosePetById(id: string): void {
   savePetSetting({ id });
   showChosenPet();
   pickerChanged();
+}
+
+let installing = false;
+
+// Checks a pet zip, asks before replacing an installed pet, installs it, and shows it in the box and the picker.
+// A bad zip changes nothing and is reported in a tray balloon and pets.log.
+async function installPetFromZip(zipPath: string): Promise<void> {
+  if (installing) return notify('Install in progress', 'Wait for the current pet install to finish.'); // one install at a time
+  installing = true;
+  try {
+    const { manifest } = await readPetZip(zipPath);
+    const parent = pickerWindow();
+    const replace = fs.existsSync(path.join(userPetsDir(), manifest.id));
+    if (replace) {
+      const ask = { type: 'question' as const, buttons: ['Replace', 'Cancel'], defaultId: 1, cancelId: 1, title: 'Install pet', message: 'Replace the existing pet?', detail: `"${manifest.displayName}" (${manifest.id}) is already installed.` };
+      const { response } = await (parent ? dialog.showMessageBox(parent, ask) : dialog.showMessageBox(ask));
+      if (response !== 0) return;
+    }
+    await installPet(zipPath, { petsDir: userPetsDir(), tmpRoot: petsTmpDir(), builtInDir: builtInPetsDir, replace });
+    refreshPets();
+    choosePetById(manifest.id);
+    openPicker();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    logPets(`Could not install ${zipPath}: ${reason}`);
+    notify('Could not install the pet', reason);
+  } finally {
+    installing = false;
+  }
+}
+
+// Picker button and tray item: choose a zip, then install it.
+async function installPetDialog(): Promise<void> {
+  const parent = pickerWindow();
+  const opts = { title: 'Install pet from zip', properties: ['openFile' as const], filters: [{ name: 'Pet zip', extensions: ['zip', 'claudepet'] }] };
+  const { canceled, filePaths } = await (parent ? dialog.showOpenDialog(parent, opts) : dialog.showOpenDialog(opts));
+  if (!canceled && filePaths[0]) await installPetFromZip(filePaths[0]);
 }
 
 // Removes the chat everywhere: the index, its messages, the tray, the box, and Claude Code's own transcript.
@@ -359,8 +396,8 @@ if (!app.requestSingleInstanceLock()) {
     petScan = scanPets();
     petSetting = petSettings(loadSettings());
     showChosenPet();
-    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled));
-    initPicker({ list: pickerItems, choose: choosePetById });
+    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled, (p) => void installPetFromZip(p)));
+    initPicker({ list: pickerItems, choose: choosePetById, install: () => void installPetDialog(), drop: (p) => void installPetFromZip(p) });
     createTray({
       toggle: toggleWindow,
       isVisible: () => !!win?.isVisible(),
@@ -374,6 +411,7 @@ if (!app.requestSingleInstanceLock()) {
       recent: () => recent(chats),
       openChat: (id) => void openChat(id),
       choosePet: openPicker,
+      installPet: () => void installPetDialog(),
       refreshPets,
       isPetHidden: () => !petSetting.enabled,
       togglePetHidden,

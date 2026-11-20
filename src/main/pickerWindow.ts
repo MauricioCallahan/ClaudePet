@@ -15,12 +15,21 @@ export interface PickerItem {
 let picker: BrowserWindow | null = null;
 
 // Called once at startup. Only the picker page may list or choose, and only a valid id gets through.
-export function initPicker(a: { list(): PickerItem[]; choose(id: string): void }): void {
+export function initPicker(a: { list(): PickerItem[]; choose(id: string): void; install(): void; drop(zipPath: string): void }): void {
   ipcMain.handle('picker:list', (e) => (e.sender === picker?.webContents ? a.list() : []));
   ipcMain.on('picker:choose', (e, id: unknown) => {
     if (e.sender === picker?.webContents && isPetId(id)) a.choose(id);
   });
+  ipcMain.on('picker:drop', (e, zipPath: unknown) => {
+    if (e.sender === picker?.webContents && typeof zipPath === 'string' && zipPath) a.drop(zipPath);
+  });
+  ipcMain.on('picker:install', (e) => {
+    if (e.sender === picker?.webContents) a.install();
+  });
 }
+
+// The open picker, so a dialog started from it can sit on top of it.
+export const pickerWindow = (): BrowserWindow | null => picker;
 
 export function openPicker(): void {
   if (picker) return picker.focus();

@@ -8,7 +8,7 @@ interface PickerItem {
   rows: number;
   chosen: boolean;
 }
-declare const picker: { list(): Promise<PickerItem[]>; choose(id: string): void; onChanged(cb: () => void): void };
+declare const picker: { list(): Promise<PickerItem[]>; choose(id: string): void; install(): void; onChanged(cb: () => void): void };
 
 const grid = document.getElementById('pets')!;
 
@@ -35,5 +35,7 @@ async function render(): Promise<void> {
   );
 }
 
+document.getElementById('install')!.addEventListener('click', () => picker.install());
+document.getElementById('done')!.addEventListener('click', () => window.close()); // choosing and installing already saved the pet
 picker.onChanged(() => void render());
 void render();

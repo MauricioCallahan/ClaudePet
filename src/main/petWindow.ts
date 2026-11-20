@@ -1,8 +1,7 @@
 import { BrowserWindow, ipcMain, screen } from 'electron';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { petPosition, roomForPet } from './bounds';
-import { COLUMNS, playableRow, ROWS, type Pet } from './petFormat';
+import { COLUMNS, playableRow, ROWS, sheetUrl, type Pet } from './petFormat';
 
 const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
 
@@ -30,7 +29,7 @@ function makeRoom(box: BrowserWindow): void {
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
 // shortcut: the whole 96x104 rectangle takes clicks, even transparent pixels; add setIgnoreMouseEvents hit-testing if it gets in the way
 // Without a valid pet the window keeps the placeholder picture. A disabled pet's window exists but stays hidden.
-export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet | undefined, enabled: boolean): void {
+export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet | undefined, enabled: boolean, onDrop: (zipPath: string) => void): void {
   sprite = chosen;
   shown = enabled;
   owner = box;
@@ -52,6 +51,7 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
     },
   });
   pet.loadFile(path.join(__dirname, '../renderer/pet.html'));
+  pet.webContents.on('will-navigate', (e) => e.preventDefault()); // a file dropped on the pet must not replace its page
   pet.webContents.once('did-finish-load', () => {
     ready = true;
     setPet(sprite);
@@ -76,13 +76,17 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
   ipcMain.on('pet:click', (e) => {
     if (e.sender === pet?.webContents) onClick();
   });
+  // A pet zip dropped on the pet; the window stays unfocusable.
+  ipcMain.on('pet:drop', (e, zipPath: unknown) => {
+    if (e.sender === pet?.webContents && typeof zipPath === 'string' && zipPath) onDrop(zipPath);
+  });
 }
 
 // Swaps the sheet and replays the current state on it; before the page has loaded, its load handler does it.
 export function setPet(p: Pet | undefined): void {
   sprite = p;
   if (!p || !pet || !ready) return;
-  pet.webContents.send('pet:sheet', { url: pathToFileURL(p.sheetPath).href, columns: COLUMNS, rows: p.rows });
+  pet.webContents.send('pet:sheet', { url: sheetUrl(p), columns: COLUMNS, rows: p.rows });
   playRow(current);
 }
 

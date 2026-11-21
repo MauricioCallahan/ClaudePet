@@ -109,6 +109,7 @@ declare const pet: {
   setMouseInside(inside: boolean): void;
   dragBox(phase: 'start' | 'move' | 'end'): void;
   onCompose(cb: () => void): void;
+  onCollapse(cb: (instant: boolean) => void): void;
 };
 
 // One listener for every Copy button, including ones created by later renders.
@@ -310,7 +311,10 @@ function resetChat(id: string, history: Message[] = []): void {
   input.value = '';
   input.focus();
 }
-pet.onNewChat(() => resetChat(crypto.randomUUID()));
+pet.onNewChat(() => {
+  resetChat(crypto.randomUUID());
+  if (compact) compose(); // the tray's New chat
+});
 pet.onOpenChat(async (id) => {
   resetChat(id, await pet.loadChat(id));
   if (compact) expand('chat'); // after the history is drawn, so the box fits it at once
@@ -381,6 +385,16 @@ function expand(m: 'compose' | 'chat'): void {
   });
 }
 const compose = () => expand('compose');
+// From main: a click outside the box (animated, like Esc), or the box was hidden (at once). The chat, its
+// messages and any unsent text stay.
+pet.onCollapse((instant) => {
+  if (!instant) return collapse();
+  document.body.classList.add('instant');
+  if (!chatsPanel.hidden) void showList(false);
+  setMode('collapsed');
+  void bar.offsetWidth; // apply the collapsed size before transitions come back
+  document.body.classList.remove('instant');
+});
 document.getElementById('new-chat')!.addEventListener('click', compose);
 pet.onCompose(compose); // the hotkey, pressed again on the collapsed bar
 // The chat list in a full-height box; Esc there goes back to where it was opened from.

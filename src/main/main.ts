@@ -128,6 +128,13 @@ function createWindow(): void {
     mood.shown();
   });
   w.on('hide', refreshTray);
+  if (!compact) return;
+  // A click anywhere outside the box (it passes through the transparent margin) takes focus away: back to the bar.
+  // The pet window can't take focus, so clicking the pet keeps its own action.
+  w.on('blur', () => {
+    if (mode !== 'collapsed') w.webContents.send('box:collapse', false);
+  });
+  w.on('hide', () => w.webContents.send('box:collapse', true)); // so it always reopens as the bar, with no morph left to play
 }
 
 // focus() alone does nothing while the window is hidden in the tray, so show first.

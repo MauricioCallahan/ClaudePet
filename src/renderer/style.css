@@ -88,6 +88,7 @@ body[data-mode]:not([data-mode="collapsed"]) .pill { opacity: 0; visibility: hid
 @media (prefers-reduced-motion: reduce) {
   body[data-mode] * { transition: none !important; animation: none !important; }
 }
+body.instant * { transition: none !important; } /* collapsing while hidden: nothing to watch */
 
 /* Chat mode: the drawn box holds the messages (or the chat list) above the bar. */
 body[data-mode="chat"] #box { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }

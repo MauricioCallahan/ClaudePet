@@ -64,4 +64,7 @@ contextBridge.exposeInMainWorld('pet', {
   onCompose: (cb: () => void): void => {
     ipcRenderer.on('chat:compose', () => cb());
   },
+  onCollapse: (cb: (instant: boolean) => void): void => {
+    ipcRenderer.on('box:collapse', (_e, instant: boolean) => cb(instant === true));
+  },
 });

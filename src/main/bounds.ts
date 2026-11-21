@@ -32,6 +32,16 @@ export function petPosition(box: Rect, pet: { width: number; height: number }, a
   };
 }
 
+// An anchor left on a monitor that is gone moves onto the nearest one's work area; one on a screen stays put
+// (even over the taskbar), so a bar the user placed never jumps.
+export function anchorOnScreen(anchor: { cx: number; bottom: number }, width: number, display: { bounds: Rect; workArea: Rect }): { cx: number; bottom: number } {
+  const b = display.bounds;
+  if (anchor.cx >= b.x && anchor.cx < b.x + b.width && anchor.bottom > b.y && anchor.bottom <= b.y + b.height) return anchor;
+  const a = display.workArea;
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+  return { cx: clamp(anchor.cx, a.x + width / 2, a.x + a.width - width / 2), bottom: clamp(anchor.bottom, a.y, a.y + a.height) };
+}
+
 // The compact box window: bottom-centered on the anchor, so it grows upward and sideways around the bar,
 // then moved down (never the anchor itself) if the pet would not fit above it.
 export function compactBounds(anchor: { cx: number; bottom: number }, size: { width: number; height: number }, petHeight: number, area: Rect): Rect {

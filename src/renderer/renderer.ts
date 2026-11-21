@@ -321,8 +321,10 @@ pet.onOpenChat(async (id) => {
 });
 pet.onFocusInput(() => input.focus());
 pet.onChatDeleted((id) => {
-  if (id === chatId) resetChat(crypto.randomUUID());
-  else if (!chatsPanel.hidden) void renderList();
+  if (id === chatId) {
+    resetChat(crypto.randomUUID());
+    if (compact) compose(); // not an empty chat box
+  } else if (!chatsPanel.hidden) void renderList();
 });
 
 // Compact mode (ui.compact): the box is a bar in a transparent window that main sizes for the mode.
@@ -384,7 +386,11 @@ function expand(m: 'compose' | 'chat'): void {
     if (mode !== 'collapsed') input.focus();
   });
 }
-const compose = () => expand('compose');
+// A new chat ends the running reply (it is saved so far), as the tray's New chat does, so Enter can send.
+function compose(): void {
+  if (state === 'thinking') pet.stopReply();
+  expand('compose');
+}
 // From main: a click outside the box (animated, like Esc), or the box was hidden (at once). The chat, its
 // messages and any unsent text stay.
 pet.onCollapse((instant) => {

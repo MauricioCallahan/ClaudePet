@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactBounds, fitPosition, petPosition, roomForPet } from './bounds';
+import { anchorOnScreen, compactBounds, fitPosition, petPosition, roomForPet } from './bounds';
 
 const size = { width: 360, height: 480 };
 const main = { x: 0, y: 0, width: 1920, height: 1040 };
@@ -82,4 +82,14 @@ test('a bar dragged to the very top of a monitor keeps the pet visible in every 
       assert.ok(compactBounds({ cx: 960, bottom: area.y + 76 }, { width: 384, height }, 104, area).y >= area.y + 104);
     }
   }
+});
+test('an anchor on a screen stays where the user put it, even over the taskbar', () => {
+  const display = { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: main };
+  assert.deepEqual(anchorOnScreen({ cx: 960, bottom: 800 }, 384, display), { cx: 960, bottom: 800 });
+  assert.deepEqual(anchorOnScreen({ cx: 10, bottom: 1080 }, 384, display), { cx: 10, bottom: 1080 });
+});
+test('an anchor left on an unplugged monitor moves onto the nearest screen', () => {
+  const display = { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: main };
+  assert.deepEqual(anchorOnScreen({ cx: -960, bottom: 800 }, 384, display), { cx: 192, bottom: 800 });
+  assert.deepEqual(anchorOnScreen({ cx: 960, bottom: -500 }, 384, display), { cx: 960, bottom: 0 });
 });

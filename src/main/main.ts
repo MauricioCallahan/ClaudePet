@@ -6,7 +6,7 @@ import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
 import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
-import { compactBounds, fitPosition, type Rect } from './bounds';
+import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
 import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, uiSettings } from './settings';
 import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
@@ -41,8 +41,9 @@ let firstFit = true; // the compact box shows once the renderer has drawn its fi
 function fitBox(): void {
   if (!win) return;
   const height = (mode === 'chat' ? drawnHeight : BAR_HEIGHT) + 2 * MARGIN;
-  const area = screen.getDisplayNearestPoint({ x: Math.round(anchor.cx), y: Math.round(anchor.bottom) }).workArea;
-  boxRect = compactBounds(anchor, { width: COMPACT_WIDTH, height }, PET_SIZE.height, area);
+  const display = screen.getDisplayNearestPoint({ x: Math.round(anchor.cx), y: Math.round(anchor.bottom) });
+  anchor = anchorOnScreen(anchor, COMPACT_WIDTH, display); // a monitor unplugged since the last drag
+  boxRect = compactBounds(anchor, { width: COMPACT_WIDTH, height }, PET_SIZE.height, display.workArea);
   win.setBounds(boxRect);
 }
 
@@ -463,7 +464,10 @@ if (!app.requestSingleInstanceLock()) {
         saveAnchor();
       }
     });
-    ipcMain.handle('chat:load',(_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
+    // Windows moves the box off a removed monitor by itself; refit at once so the anchor and boxRect follow,
+    // or the next resize or drag would put it back where no screen is.
+    screen.on('display-removed', () => compact && fitBox());
+    ipcMain.handle('chat:load', (_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
     ipcMain.handle('chats:list', async (_e, query: unknown) => {
       const q = typeof query === 'string' ? query.slice(0, 200) : '';
       const all = recent(chats, Infinity);

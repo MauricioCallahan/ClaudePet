@@ -70,3 +70,16 @@ test('the compact box uses the anchor on a second monitor', () => {
   const above = { x: 0, y: -1080, width: 1920, height: 1040 };
   assert.deepEqual(compactBounds({ cx: 960, bottom: -1050 }, bar, 104, above), { x: 768, y: -976, ...bar });
 });
+test('collapsing after an expansion that was pushed down puts the bar back on the anchor', () => {
+  const anchor = { cx: 960, bottom: 300 };
+  assert.equal(compactBounds(anchor, { width: 384, height: 504 }, 104, main).y, 104); // pushed down, below the anchor
+  const back = compactBounds(anchor, bar, 104, main);
+  assert.equal(back.y + back.height, 300);
+});
+test('a bar dragged to the very top of a monitor keeps the pet visible in every mode', () => {
+  for (const area of [main, { x: 0, y: -1080, width: 1920, height: 1040 }]) {
+    for (const height of [76, 300, 504]) {
+      assert.ok(compactBounds({ cx: 960, bottom: area.y + 76 }, { width: 384, height }, 104, area).y >= area.y + 104);
+    }
+  }
+});

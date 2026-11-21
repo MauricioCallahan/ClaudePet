@@ -10,6 +10,7 @@ const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
 const thinking = document.getElementById('thinking')!;
 const sendButton = document.getElementById('send')!;
+const bar = document.getElementById('bar')!; // holds the form; in compact mode also the pill, and it morphs
 let chatId: string = crypto.randomUUID();
 let lastText = ''; // what Retry sends again
 
@@ -32,6 +33,7 @@ function setState(s: State): void {
   if (s === 'thinking') armSlow();
   else thinking.textContent = '';
   sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
+  sendButton.classList.toggle('stop', s === 'thinking'); // compact mode draws the button as an icon
 }
 
 // User and error text goes in with textContent; Claude's replies are untrusted Markdown, rendered only through renderMarkdown (sanitized).
@@ -104,6 +106,7 @@ declare const pet: {
   fitBox(mode: Mode, height: number): void;
   setMouseInside(inside: boolean): void;
   dragBox(phase: 'start' | 'move' | 'end'): void;
+  onCompose(cb: () => void): void;
 };
 
 // One listener for every Copy button, including ones created by later renders.
@@ -200,7 +203,7 @@ const chatList = document.getElementById('chat-list')!;
 const search = document.getElementById('search') as HTMLInputElement;
 async function showList(open: boolean): Promise<void> {
   chatsPanel.hidden = !open;
-  messages.hidden = form.hidden = thinking.hidden = open;
+  messages.hidden = bar.hidden = thinking.hidden = open;
   chatsButton.setAttribute('aria-expanded', String(open));
   if (!open) return input.focus();
   search.value = '';
@@ -284,7 +287,10 @@ chatList.addEventListener('keydown', (e) => {
 });
 chatsButton.addEventListener('click', () => void showList(chatsButton.getAttribute('aria-expanded') !== 'true'));
 chatsPanel.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') void showList(false);
+  if (e.key !== 'Escape') return;
+  e.stopPropagation(); // Esc closes the list only, it does not also collapse the compact box
+  void showList(false);
+  if (compact) setMode(listFrom);
 });
 
 function resetChat(id: string, history: Message[] = []): void {
@@ -313,15 +319,45 @@ pet.onChatDeleted((id) => {
 // Compact mode (ui.compact): the box is a bar in a transparent window that main sizes for the mode.
 // The window lets clicks through, except while the mouse is over the drawn part.
 type Mode = 'collapsed' | 'compose' | 'chat';
-const bar = document.getElementById('bar')!;
 let compact = false;
 let mode: Mode = 'collapsed';
+const PLACEHOLDER: Record<Mode, string> = { collapsed: '', compose: 'Start new chat', chat: 'Reply…' };
+const MAX_BOX = 480; // main caps the box at the full box's height
 function setMode(m: Mode): void {
   mode = m;
   document.body.dataset.mode = m;
-  pet.fitBox(m, 0);
+  input.placeholder = PLACEHOLDER[m];
+  if (m === 'collapsed') input.blur(); // keys must not type into the hidden input
+  pet.fitBox(m, m === 'chat' && !chatsPanel.hidden ? MAX_BOX : 0);
   checkInside();
 }
+function collapse(): void {
+  if (!chatsPanel.hidden) void showList(false);
+  setMode('collapsed');
+}
+// The pill stretches into the input bar; focus moves in once it has (at once if it already has, or with reduced motion).
+function compose(): void {
+  setMode('compose');
+  if (bar.offsetWidth === form.offsetWidth || matchMedia('(prefers-reduced-motion: reduce)').matches) return input.focus();
+  bar.addEventListener('transitionend', function done(e) {
+    if (e.propertyName !== 'width') return;
+    bar.removeEventListener('transitionend', done);
+    if (mode !== 'collapsed') input.focus();
+  });
+}
+document.getElementById('new-chat')!.addEventListener('click', compose);
+pet.onCompose(compose); // the hotkey, pressed again on the collapsed bar
+// + opens the chat list (attachments come in v0.2); the box grows to full height to hold it.
+let listFrom: Mode = 'compose'; // where Esc in the list goes back to
+document.getElementById('plus')!.addEventListener('click', () => {
+  listFrom = mode;
+  void showList(true);
+  setMode('chat'); // after the list is unhidden, so the box grows to hold it
+  search.focus(); // again: the list was not displayed yet when showList focused it
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && compact && mode !== 'collapsed') collapse();
+});
 let inside = false;
 let dragging = false;
 let mouse = { x: -1, y: -1 }; // the last (forwarded) mouse position; off the page once it left the window

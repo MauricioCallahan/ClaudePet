@@ -61,4 +61,7 @@ contextBridge.exposeInMainWorld('pet', {
   dragBox: (phase: 'start' | 'move' | 'end'): void => {
     ipcRenderer.send('box:drag', phase);
   },
+  onCompose: (cb: () => void): void => {
+    ipcRenderer.on('chat:compose', () => cb());
+  },
 });

@@ -348,6 +348,14 @@ export function toggleWindow(): void {
   else showWindow();
 }
 
+// The global hotkey. Visible but behind another app: bring it forward instead of hiding it.
+// Pressed again on the focused, collapsed compact bar: open the new chat input.
+export function onHotkey(): void {
+  if (win?.isVisible() && !win.isFocused()) showWindow();
+  else if (compact && win?.isVisible() && mode === 'collapsed') win.webContents.send('chat:compose');
+  else toggleWindow();
+}
+
 const DEFAULT_HOTKEY = 'CommandOrControl+,';
 let hotkey = '';
 
@@ -356,11 +364,7 @@ export function registerHotkey(accel: string): boolean {
   if (accel === hotkey) return true;
   let ok = false;
   try {
-    // Visible but behind another app: bring it forward instead of hiding it.
-    ok = globalShortcut.register(accel, () => {
-      if (win?.isVisible() && !win.isFocused()) showWindow();
-      else toggleWindow();
-    });
+    ok = globalShortcut.register(accel, onHotkey);
   } catch {
     // register() throws on a malformed accelerator in settings.json
   }

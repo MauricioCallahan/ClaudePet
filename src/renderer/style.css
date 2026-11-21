@@ -67,5 +67,28 @@ body[data-mode] .pill { position: absolute; inset: 0; display: flex; align-items
 .pill svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pill .divider { width: 1px; height: 20px; background: #ddd; }
 /* The input bar keeps its full width inside the pill, centered, so growing the pill reveals it from the middle. */
-body[data-mode] #form { position: absolute; left: 50%; bottom: 0; width: var(--bar-w); height: var(--bar-h); transform: translateX(-50%); box-sizing: border-box; border-top: 0; align-items: center; }
-body[data-mode="collapsed"] #form { opacity: 0; visibility: hidden; }
+body[data-mode] #form { position: absolute; left: 50%; bottom: 0; width: var(--bar-w); height: var(--bar-h); transform: translateX(-50%); box-sizing: border-box; padding: 0 10px; border-top: 0; align-items: center; }
+body[data-mode] #plus { display: grid; }
+#plus { flex: none; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: none; color: #333; font-size: 22px; line-height: 1; cursor: pointer; }
+#plus:hover { background: #f0f0f0; }
+body[data-mode] #input { height: 36px; padding: 8px 4px; border: 0; background: transparent; line-height: 20px; box-sizing: border-box; }
+/* Send keeps its Send/Stop text for screen readers; compact mode draws it as a round arrow (a square while Claude replies). */
+body[data-mode] #send { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: #222; font-size: 0; }
+body[data-mode] #send::before { content: '↑'; color: #fff; font-size: 16px; font-weight: 600; }
+body[data-mode] #send.stop::before { content: '■'; font-size: 11px; }
+
+/* The morph (Figma "Pill to chat bar"): the pill stretches around its center into the input bar while its
+   buttons fade out over the first 100ms and the input parts fade in after them. */
+:root { --morph: 250ms; --ease: cubic-bezier(0.2, 0, 0, 1); }
+body[data-mode] #bar { transition: width var(--morph) var(--ease), height var(--morph) var(--ease), border-radius var(--morph) var(--ease); }
+body[data-mode]:not([data-mode="collapsed"]) #bar { width: var(--bar-w); height: var(--bar-h); border-radius: calc(var(--bar-h) / 2); }
+body[data-mode] .pill, body[data-mode] #form { transition: opacity 150ms linear 100ms, visibility 0s 100ms; }
+body[data-mode="collapsed"] #form,
+body[data-mode]:not([data-mode="collapsed"]) .pill { opacity: 0; visibility: hidden; transition: opacity 100ms linear, visibility 0s 100ms; }
+@media (prefers-reduced-motion: reduce) {
+  body[data-mode] * { transition: none !important; animation: none !important; }
+}
+
+/* Chat mode: the drawn box holds the messages (or the chat list) above the bar. */
+body[data-mode="chat"] #box { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
+body[data-mode="chat"] #box #bar { box-shadow: none; border-radius: 0; border-top: 1px solid #eee; box-sizing: border-box; }

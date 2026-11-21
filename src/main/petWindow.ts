@@ -29,7 +29,7 @@ function makeRoom(box: BrowserWindow): void {
 // A window of its own: the box would have to be transparent to hold the pet, and Windows can't resize transparent windows.
 // shortcut: the whole 96x104 rectangle takes clicks, even transparent pixels; add setIgnoreMouseEvents hit-testing if it gets in the way
 // Without a valid pet the window keeps the placeholder picture. A disabled pet's window exists but stays hidden.
-export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet | undefined, enabled: boolean, onDrop: (zipPath: string) => void): void {
+export function createPet(box: BrowserWindow, chosen: Pet | undefined, enabled: boolean, onDrop: (zipPath: string) => void, onDrag: (phase: unknown) => void): void {
   sprite = chosen;
   shown = enabled;
   owner = box;
@@ -43,7 +43,7 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false, // a click on the pet must leave the focus in the chat input
+    focusable: false, // dragging the pet must leave the focus in the chat input
     webPreferences: {
       preload: path.join(__dirname, '../preload/petPreload.js'),
       contextIsolation: true,
@@ -73,8 +73,9 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
   pet.once('ready-to-show', () => {
     if (shown && box.isVisible()) pet?.showInactive();
   });
-  ipcMain.on('pet:click', (e) => {
-    if (e.sender === pet?.webContents) onClick();
+  // Holding the pet drags the box it stands on (compact mode); place() then moves the pet with it.
+  ipcMain.on('pet:drag', (e, phase: unknown) => {
+    if (e.sender === pet?.webContents) onDrag(phase);
   });
   // A pet zip dropped on the pet; the window stays unfocusable.
   ipcMain.on('pet:drop', (e, zipPath: unknown) => {

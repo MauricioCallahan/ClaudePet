@@ -47,6 +47,23 @@ function fitBox(): void {
   win.setBounds(boxRect);
 }
 
+// The box follows the cursor while the bar, the chat box or the pet is held; the renderers only say start/move/end.
+let grab: { dx: number; dy: number } | null = null; // where on the window the pointer took hold
+function dragBox(phase: unknown): void {
+  if (!win || !boxRect) return;
+  const c = screen.getCursorScreenPoint();
+  if (phase === 'start') grab = { dx: c.x - boxRect.x, dy: c.y - boxRect.y };
+  if (!grab || (phase !== 'move' && phase !== 'end')) return;
+  boxRect = { ...boxRect, x: c.x - grab.dx, y: c.y - grab.dy };
+  win.setBounds(boxRect);
+  if (phase === 'end') {
+    grab = null;
+    anchor = { cx: boxRect.x + boxRect.width / 2, bottom: boxRect.y + boxRect.height };
+    fitBox(); // dropped too high: moves down so the pet fits
+    saveAnchor();
+  }
+}
+
 // Stored as the full box's top-left, so turning compact mode off or on keeps the bar in the same place.
 const saveAnchor = () => saveSettings({ x: Math.round(anchor.cx - FULL.width / 2), y: Math.round(anchor.bottom - MARGIN - FULL.height) });
 
@@ -131,7 +148,7 @@ function createWindow(): void {
   w.on('hide', refreshTray);
   if (!compact) return;
   // A click anywhere outside the box (it passes through the transparent margin) takes focus away: back to the bar.
-  // The pet window can't take focus, so clicking the pet keeps its own action.
+  // The pet window can't take focus, so pressing the pet (to drag) leaves the box as it is.
   w.on('blur', () => {
     if (mode !== 'collapsed') w.webContents.send('box:collapse', false);
   });
@@ -449,20 +466,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Dragged in JS, not with -webkit-app-region: Windows sends no mouse events over a drag region,
     // so the renderer could never tell main to stop ignoring clicks there.
-    let grab: { dx: number; dy: number } | null = null; // where on the window the pointer took hold
     ipcMain.on('box:drag', (e, phase: unknown) => {
-      if (!fromBox(e) || !boxRect) return;
-      const c = screen.getCursorScreenPoint();
-      if (phase === 'start') grab = { dx: c.x - boxRect.x, dy: c.y - boxRect.y };
-      if (!grab || (phase !== 'move' && phase !== 'end')) return;
-      boxRect = { ...boxRect, x: c.x - grab.dx, y: c.y - grab.dy };
-      win!.setBounds(boxRect);
-      if (phase === 'end') {
-        grab = null;
-        anchor = { cx: boxRect.x + boxRect.width / 2, bottom: boxRect.y + boxRect.height };
-        fitBox(); // dropped too high: moves down so the pet fits
-        saveAnchor();
-      }
+      if (fromBox(e)) dragBox(phase);
     });
     // Windows moves the box off a removed monitor by itself; refit at once so the anchor and boxRect follow,
     // or the next resize or drag would put it back where no screen is.
@@ -481,7 +486,7 @@ if (!app.requestSingleInstanceLock()) {
     petScan = scanPets();
     petSetting = petSettings(loadSettings());
     showChosenPet();
-    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled, (p) => void installPetFromZip(p)));
+    win?.webContents.once('did-finish-load', () => win && createPet(win, shownPet, petSetting.enabled, (p) => void installPetFromZip(p), (phase) => compact && dragBox(phase)));
     initPicker({ list: pickerItems, choose: choosePetById, install: () => void installPetDialog(), drop: (p) => void installPetFromZip(p) });
     createTray({
       toggle: toggleWindow,

@@ -439,14 +439,19 @@ document.documentElement.addEventListener('mouseleave', () => {
   mouse = { x: -1, y: -1 };
   checkInside();
 });
-// The bar drags the box from anywhere but its buttons and input; main moves the window to follow the cursor.
-bar.addEventListener('pointerdown', (e) => {
-  if (!compact || e.button !== 0 || (e.target as Element).closest('button, textarea')) return;
-  bar.setPointerCapture(e.pointerId);
+// The drawn part (the bar, and in chat mode the whole box) drags the window from anywhere but its controls, the
+// message text (kept selectable) and a scrollbar; main moves the window to follow the cursor.
+const boxEl = document.getElementById('box')!;
+boxEl.addEventListener('pointerdown', (e) => {
+  const t = e.target as HTMLElement;
+  if (!compact || e.button !== 0 || !t.closest(mode === 'chat' ? '#box' : '#bar')) return;
+  if (t.closest('button, textarea, input, a, .msg, #chat-list') || (t.scrollHeight > t.clientHeight && e.offsetX > t.clientWidth)) return;
+  boxEl.setPointerCapture(e.pointerId);
   dragging = true;
   pet.dragBox('start');
 });
-bar.addEventListener('pointermove', () => {
+document.addEventListener('selectstart', (e) => dragging && e.preventDefault()); // a drag across the messages selects nothing
+boxEl.addEventListener('pointermove', () => {
   if (dragging) pet.dragBox('move');
 });
 function endDrag(): void {
@@ -455,8 +460,8 @@ function endDrag(): void {
   pet.dragBox('end');
   checkInside();
 }
-bar.addEventListener('pointerup', endDrag);
-bar.addEventListener('lostpointercapture', endDrag);
+boxEl.addEventListener('pointerup', endDrag);
+boxEl.addEventListener('lostpointercapture', endDrag);
 
 compact = await pet.isCompact();
 if (compact) setMode('collapsed');

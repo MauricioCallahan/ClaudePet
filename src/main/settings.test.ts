@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PET_ID, parseSettings, petSettings } from './settings';
+import { DEFAULT_PET_ID, parseSettings, petSettings, uiSettings } from './settings';
 
 test('returns a valid settings object', () => {
   assert.deepEqual(parseSettings('{"x":1,"y":2}'), { x: 1, y: 2 });
@@ -29,4 +29,15 @@ test('a bad pet.id falls back to the default pet', () => {
 });
 test('a pet setting that is not an object falls back to the defaults', () => {
   for (const pet of [true, 'cat', null]) assert.deepEqual(petSettings({ pet } as never), { enabled: true, id: DEFAULT_PET_ID });
+});
+
+test('compact mode is on when nothing is set', () => {
+  assert.deepEqual(uiSettings({}), { compact: true });
+});
+test('ui.compact false keeps the full box', () => {
+  assert.deepEqual(uiSettings({ ui: { compact: false } }), { compact: false });
+});
+test('a bad ui.compact or ui falls back to compact', () => {
+  for (const compact of ['false', 0, null]) assert.equal(uiSettings({ ui: { compact } }).compact, true);
+  for (const ui of [false, 'x', null]) assert.equal(uiSettings({ ui } as never).compact, true);
 });

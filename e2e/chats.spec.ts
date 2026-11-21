@@ -29,6 +29,7 @@ async function send(text: string): Promise<void> {
 
 test.beforeAll(async () => {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ ui: { compact: false } })); // these specs test the full box
   await launch();
 });
 test.afterAll(async () => {

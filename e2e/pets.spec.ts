@@ -12,6 +12,7 @@ let pet: Page;
 // One profile and one fake Codex home for the whole file, so a relaunch sees what the last run saved.
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
 const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-codex-')); // never the real ~/.codex
+fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ ui: { compact: false } })); // these specs test the full box
 const fixture = (id: string) => path.join(__dirname, 'fixtures/pets', id);
 
 async function launch(): Promise<void> {

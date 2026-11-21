@@ -100,6 +100,10 @@ declare const pet: {
   onReplyChunk(cb: (text: string) => void): void;
   onReplyEnd(cb: () => void): void;
   onReplyError(cb: (error: ReplyError) => void): void;
+  isCompact(): Promise<boolean>;
+  fitBox(mode: Mode, height: number): void;
+  setMouseInside(inside: boolean): void;
+  dragBox(phase: 'start' | 'move' | 'end'): void;
 };
 
 // One listener for every Copy button, including ones created by later renders.
@@ -305,4 +309,55 @@ pet.onChatDeleted((id) => {
   if (id === chatId) resetChat(crypto.randomUUID());
   else if (!chatsPanel.hidden) void renderList();
 });
+
+// Compact mode (ui.compact): the box is a bar in a transparent window that main sizes for the mode.
+// The window lets clicks through, except while the mouse is over the drawn part.
+type Mode = 'collapsed' | 'compose' | 'chat';
+const bar = document.getElementById('bar')!;
+let compact = false;
+let mode: Mode = 'collapsed';
+function setMode(m: Mode): void {
+  mode = m;
+  document.body.dataset.mode = m;
+  pet.fitBox(m, 0);
+  checkInside();
+}
+let inside = false;
+let dragging = false;
+let mouse = { x: -1, y: -1 }; // the last (forwarded) mouse position; off the page once it left the window
+// Re-checked on every move and mode change, so the click-through state can't go stale.
+function checkInside(): void {
+  if (!compact) return;
+  const now = dragging || !!document.elementFromPoint(mouse.x, mouse.y)?.closest(mode === 'chat' ? '#box' : '#bar');
+  if (now !== inside) pet.setMouseInside((inside = now));
+}
+document.addEventListener('mousemove', (e) => {
+  mouse = { x: e.clientX, y: e.clientY };
+  checkInside();
+});
+document.documentElement.addEventListener('mouseleave', () => {
+  mouse = { x: -1, y: -1 };
+  checkInside();
+});
+// The bar drags the box from anywhere but its buttons and input; main moves the window to follow the cursor.
+bar.addEventListener('pointerdown', (e) => {
+  if (!compact || e.button !== 0 || (e.target as Element).closest('button, textarea')) return;
+  bar.setPointerCapture(e.pointerId);
+  dragging = true;
+  pet.dragBox('start');
+});
+bar.addEventListener('pointermove', () => {
+  if (dragging) pet.dragBox('move');
+});
+function endDrag(): void {
+  if (!dragging) return;
+  dragging = false;
+  pet.dragBox('end');
+  checkInside();
+}
+bar.addEventListener('pointerup', endDrag);
+bar.addEventListener('lostpointercapture', endDrag);
+
+compact = await pet.isCompact();
+if (compact) setMode('collapsed');
 resetChat(chatId);

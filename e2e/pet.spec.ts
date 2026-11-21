@@ -12,7 +12,7 @@ let profile: string;
 
 async function launch(settings?: object): Promise<void> {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
-  if (settings) fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify(settings));
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ ...settings, ui: { compact: false } })); // these specs test the full box
   app = await _electron.launch({ args: ['.', `--user-data-dir=${profile}`], env: { ...process.env, CLAUDEPET_BRIDGE: 'fake' } });
   page = await app.firstWindow();
   await expect(page.locator('#messages .msg.claude').last()).toHaveText(/ClaudePet/);

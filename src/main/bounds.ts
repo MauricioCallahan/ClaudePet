@@ -32,6 +32,13 @@ export function petPosition(box: Rect, pet: { width: number; height: number }, a
   };
 }
 
+// The compact box window: bottom-centered on the anchor, so it grows upward and sideways around the bar,
+// then moved down (never the anchor itself) if the pet would not fit above it.
+export function compactBounds(anchor: { cx: number; bottom: number }, size: { width: number; height: number }, petHeight: number, area: Rect): Rect {
+  const box = { x: Math.round(anchor.cx - size.width / 2), y: Math.round(anchor.bottom - size.height), ...size };
+  return roomForPet(box, petHeight, area);
+}
+
 // Where the box must go so the pet standing on it fits below the top of the screen.
 // A box too tall for what is left shrinks, so its input never ends up below the screen.
 export function roomForPet(box: Rect, petHeight: number, area: Rect): Rect {

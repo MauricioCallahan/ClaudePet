@@ -3,7 +3,7 @@ import path from 'node:path';
 import { petPosition, roomForPet } from './bounds';
 import { COLUMNS, playableRow, ROWS, sheetUrl, type Pet } from './petFormat';
 
-const SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
+export const PET_SIZE = { width: 96, height: 104 }; // half a 192x208 sprite frame; a size setting comes in v0.2
 
 // Module-level, like the tray, so main only has to call createPet once.
 let pet: BrowserWindow | null = null;
@@ -15,14 +15,14 @@ let current = 0; // the row the pet state wants (see STATE_ROW)
 
 function place(box: BrowserWindow): void {
   const b = box.getBounds();
-  pet?.setBounds({ ...petPosition(b, SIZE, screen.getDisplayMatching(b).workArea), ...SIZE });
+  pet?.setBounds({ ...petPosition(b, PET_SIZE, screen.getDisplayMatching(b).workArea), ...PET_SIZE });
 }
 
 // Only once a drag or resize ends: moving the box inside Windows' drag loop makes it jitter.
 // Runs before main's debounced save, so the saved spot is the snapped one.
 function makeRoom(box: BrowserWindow): void {
   const b = box.getBounds();
-  const r = roomForPet(b, SIZE.height, screen.getDisplayMatching(b).workArea);
+  const r = roomForPet(b, PET_SIZE.height, screen.getDisplayMatching(b).workArea);
   if (r.y !== b.y) box.setBounds(r);
 }
 
@@ -34,7 +34,7 @@ export function createPet(box: BrowserWindow, onClick: () => void, chosen: Pet |
   shown = enabled;
   owner = box;
   pet = new BrowserWindow({
-    ...SIZE,
+    ...PET_SIZE,
     show: false,
     frame: false,
     transparent: true,

@@ -50,4 +50,15 @@ contextBridge.exposeInMainWorld('pet', {
   onReplyError: (cb: (error: ReplyError) => void): void => {
     ipcRenderer.on('reply:error', (_e, error: ReplyError) => cb(error));
   },
+  // Compact box (ui.compact): main sizes and moves the window, the renderer says what it needs.
+  isCompact: (): Promise<boolean> => ipcRenderer.invoke('ui:compact'),
+  fitBox: (mode: 'collapsed' | 'compose' | 'chat', height: number): void => {
+    ipcRenderer.send('box:fit', mode, height);
+  },
+  setMouseInside: (inside: boolean): void => {
+    ipcRenderer.send('box:mouse', inside);
+  },
+  dragBox: (phase: 'start' | 'move' | 'end'): void => {
+    ipcRenderer.send('box:drag', phase);
+  },
 });

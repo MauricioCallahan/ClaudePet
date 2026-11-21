@@ -27,7 +27,7 @@ const ROWS = [
 async function launch(id: string): Promise<void> {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
   fs.cpSync(path.join(__dirname, 'fixtures/pets', id), path.join(profile, 'pets', id), { recursive: true });
-  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ pet: { id } }));
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ pet: { id }, ui: { compact: false } }));
   app = await _electron.launch({ args: ['.', `--user-data-dir=${profile}`], env: { ...process.env, CLAUDEPET_BRIDGE: 'fake' } });
   await app.firstWindow();
   await expect.poll(() => app.windows().some((p) => p.url().endsWith('pet.html'))).toBe(true);

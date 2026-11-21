@@ -38,6 +38,7 @@ async function hang(): Promise<number> {
 
 test.beforeAll(async () => {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ ui: { compact: false } })); // these specs test the full box
   const env = { ...process.env, CLAUDEPET_CLAUDE: path.join(__dirname, 'fixtures', 'fake-claude.cmd') };
   delete (env as NodeJS.ProcessEnv).CLAUDEPET_BRIDGE;
   app = await _electron.launch({ args: ['.', `--user-data-dir=${profile}`], env });

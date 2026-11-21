@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fitPosition, petPosition, roomForPet } from './bounds';
+import { compactBounds, fitPosition, petPosition, roomForPet } from './bounds';
 
 const size = { width: 360, height: 480 };
 const main = { x: 0, y: 0, width: 1920, height: 1040 };
@@ -48,4 +48,25 @@ test('a box with room for the pet stays where it is', () => {
 });
 test('a box too tall for the room left under the pet shrinks to fit the screen', () => {
   assert.deepEqual(roomForPet({ x: 0, y: 0, width: 1920, height: 1040 }, 104, main), { x: 0, y: 104, width: 1920, height: 936 });
+});
+
+// Compact box: the anchor is the window's bottom-center; the window is 384 wide.
+const bar = { width: 384, height: 76 };
+test('the compact box is centered on the anchor and ends at its bottom', () => {
+  assert.deepEqual(compactBounds({ cx: 960, bottom: 800 }, bar, 104, main), { x: 768, y: 724, ...bar });
+});
+test('a taller compact box grows upward from the same bottom edge', () => {
+  assert.deepEqual(compactBounds({ cx: 960, bottom: 800 }, { width: 384, height: 504 }, 104, main), { x: 768, y: 296, width: 384, height: 504 });
+});
+test('near the top of the screen the compact box moves down so the pet fits', () => {
+  assert.deepEqual(compactBounds({ cx: 960, bottom: 300 }, { width: 384, height: 504 }, 104, main), { x: 768, y: 104, width: 384, height: 504 });
+});
+test('on a screen too short for the pet and the box, the compact box shrinks', () => {
+  const short = { x: 0, y: 0, width: 1280, height: 500 };
+  assert.deepEqual(compactBounds({ cx: 640, bottom: 400 }, { width: 384, height: 504 }, 104, short), { x: 448, y: 104, width: 384, height: 396 });
+});
+test('the compact box uses the anchor on a second monitor', () => {
+  assert.deepEqual(compactBounds({ cx: -960, bottom: 800 }, bar, 104, left), { x: -1152, y: 724, ...bar });
+  const above = { x: 0, y: -1080, width: 1920, height: 1040 };
+  assert.deepEqual(compactBounds({ cx: 960, bottom: -1050 }, bar, 104, above), { x: 768, y: -976, ...bar });
 });

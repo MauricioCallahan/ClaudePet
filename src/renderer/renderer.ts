@@ -10,6 +10,7 @@ const form = document.getElementById('form') as HTMLFormElement;
 const input = document.getElementById('input') as HTMLTextAreaElement;
 const thinking = document.getElementById('thinking')!;
 const sendButton = document.getElementById('send')!;
+const bar = document.getElementById('bar')!; // holds the form; in compact mode also the pill, and it morphs
 let chatId: string = crypto.randomUUID();
 let lastText = ''; // what Retry sends again
 
@@ -32,6 +33,7 @@ function setState(s: State): void {
   if (s === 'thinking') armSlow();
   else thinking.textContent = '';
   sendButton.textContent = s === 'thinking' ? 'Stop' : 'Send';
+  sendButton.classList.toggle('stop', s === 'thinking'); // compact mode draws the button as an icon
 }
 
 // User and error text goes in with textContent; Claude's replies are untrusted Markdown, rendered only through renderMarkdown (sanitized).
@@ -53,9 +55,11 @@ form.addEventListener('submit', (e) => {
   }
   const text = input.value.trim();
   if (!text) return;
+  if (compact && mode === 'compose') resetChat(crypto.randomUUID()); // the new chat starts with its first message
   addMessage(text, 'user');
   send(text);
   input.value = '';
+  if (compact) setMode('chat');
 });
 
 function send(text: string, retry = false): void {
@@ -100,6 +104,12 @@ declare const pet: {
   onReplyChunk(cb: (text: string) => void): void;
   onReplyEnd(cb: () => void): void;
   onReplyError(cb: (error: ReplyError) => void): void;
+  isCompact(): Promise<boolean>;
+  fitBox(mode: Mode, height: number): void;
+  setMouseInside(inside: boolean): void;
+  dragBox(phase: 'start' | 'move' | 'end'): void;
+  onCompose(cb: () => void): void;
+  onCollapse(cb: (instant: boolean) => void): void;
 };
 
 // One listener for every Copy button, including ones created by later renders.
@@ -196,7 +206,7 @@ const chatList = document.getElementById('chat-list')!;
 const search = document.getElementById('search') as HTMLInputElement;
 async function showList(open: boolean): Promise<void> {
   chatsPanel.hidden = !open;
-  messages.hidden = form.hidden = thinking.hidden = open;
+  messages.hidden = bar.hidden = thinking.hidden = open;
   chatsButton.setAttribute('aria-expanded', String(open));
   if (!open) return input.focus();
   search.value = '';
@@ -280,7 +290,10 @@ chatList.addEventListener('keydown', (e) => {
 });
 chatsButton.addEventListener('click', () => void showList(chatsButton.getAttribute('aria-expanded') !== 'true'));
 chatsPanel.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') void showList(false);
+  if (e.key !== 'Escape') return;
+  e.stopPropagation(); // Esc closes the list only, it does not also collapse the compact box
+  void showList(false);
+  if (compact) setMode(listFrom);
 });
 
 function resetChat(id: string, history: Message[] = []): void {
@@ -293,16 +306,163 @@ function resetChat(id: string, history: Message[] = []): void {
     if (m.role === 'user') addMessage(m.text, 'user', false, m.at);
     else renderReply(addReply(m.at), m.text);
   }
-  if (!history.length) addMessage("Hi, I'm ClaudePet.", 'claude');
+  if (!history.length && !compact) addMessage("Hi, I'm ClaudePet.", 'claude'); // the compact box would only grow for it
   messages.scrollTop = messages.scrollHeight;
   input.value = '';
   input.focus();
 }
-pet.onNewChat(() => resetChat(crypto.randomUUID()));
-pet.onOpenChat(async (id) => resetChat(id, await pet.loadChat(id)));
+pet.onNewChat(() => {
+  resetChat(crypto.randomUUID());
+  if (compact) compose(); // the tray's New chat
+});
+pet.onOpenChat(async (id) => {
+  resetChat(id, await pet.loadChat(id));
+  if (compact) expand('chat'); // after the history is drawn, so the box fits it at once
+});
 pet.onFocusInput(() => input.focus());
 pet.onChatDeleted((id) => {
-  if (id === chatId) resetChat(crypto.randomUUID());
-  else if (!chatsPanel.hidden) void renderList();
+  if (id === chatId) {
+    resetChat(crypto.randomUUID());
+    if (compact) compose(); // not an empty chat box
+  } else if (!chatsPanel.hidden) void renderList();
 });
+
+// Compact mode (ui.compact): the box is a bar in a transparent window that main sizes for the mode.
+// The window lets clicks through, except while the mouse is over the drawn part.
+type Mode = 'collapsed' | 'compose' | 'chat';
+let compact = false;
+let mode: Mode = 'collapsed';
+const PLACEHOLDER: Record<Mode, string> = { collapsed: '', compose: 'Start new chat', chat: 'Reply…' };
+const MAX_BOX = 480; // main caps the box at the full box's height
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+let leaving = 0; // a pending chat → collapsed fade-out; any mode change cancels it
+function setMode(m: Mode): void {
+  leaving++;
+  document.body.classList.remove('leaving');
+  // The pill's View chats opens the chat in 225ms (the Figma prototype); every other morph takes 250ms.
+  document.body.style.setProperty('--morph', mode === 'collapsed' && m === 'chat' ? '225ms' : '250ms');
+  mode = m;
+  document.body.dataset.mode = m;
+  input.placeholder = PLACEHOLDER[m];
+  if (m === 'collapsed') input.blur(); // keys must not type into the hidden input
+  fit();
+  checkInside();
+}
+// Chat mode: the box is as tall as its messages, up to MAX_BOX (then #messages scrolls). Measured from the
+// bottom of the last message, not scrollHeight, which never drops below the box's current height.
+function chatHeight(): number {
+  const last = messages.lastElementChild as HTMLElement | null; // offsetTop counts from #messages (position: relative)
+  const content = last ? last.offsetTop + last.offsetHeight + parseFloat(getComputedStyle(messages).paddingBottom) : 0;
+  return content + thinking.offsetHeight + form.offsetHeight; // the form, not the bar: the bar may still be morphing
+}
+let fitted = ''; // the last size sent, so a streamed reply resizes the window only when its height changes
+function fit(): void {
+  if (!compact) return;
+  const height = mode !== 'chat' ? 0 : chatsPanel.hidden ? chatHeight() : MAX_BOX;
+  if (`${mode} ${height}` === fitted) return;
+  fitted = `${mode} ${height}`;
+  pet.fitBox(mode, height);
+}
+let fitFrame = 0;
+const refit = () => (fitFrame ||= requestAnimationFrame(() => ((fitFrame = 0), fit())));
+const watch = { childList: true, subtree: true, characterData: true };
+new MutationObserver(refit).observe(messages, watch); // messages, streamed text, Retry and copy buttons
+new MutationObserver(refit).observe(thinking, watch);
+// Back to the pill. From chat the messages fade out first, then the window shrinks and the bar morphs back.
+function collapse(): void {
+  if (!chatsPanel.hidden) void showList(false);
+  if (mode !== 'chat' || reducedMotion()) return setMode('collapsed');
+  document.body.classList.add('leaving');
+  const ask = ++leaving;
+  setTimeout(() => ask === leaving && setMode('collapsed'), 150);
+}
+// The pill stretches into the input bar; focus moves in once it has (at once if it already has, or with reduced motion).
+function expand(m: 'compose' | 'chat'): void {
+  setMode(m);
+  if (bar.offsetWidth === form.offsetWidth || reducedMotion()) return input.focus();
+  bar.addEventListener('transitionend', function done(e) {
+    if (e.propertyName !== 'width') return;
+    bar.removeEventListener('transitionend', done);
+    if (mode !== 'collapsed') input.focus();
+  });
+}
+// A new chat ends the running reply (it is saved so far), as the tray's New chat does, so Enter can send.
+function compose(): void {
+  if (state === 'thinking') pet.stopReply();
+  expand('compose');
+}
+// From main: a click outside the box (animated, like Esc), or the box was hidden (at once). The chat, its
+// messages and any unsent text stay.
+pet.onCollapse((instant) => {
+  if (!instant) return collapse();
+  document.body.classList.add('instant');
+  if (!chatsPanel.hidden) void showList(false);
+  setMode('collapsed');
+  void bar.offsetWidth; // apply the collapsed size before transitions come back
+  document.body.classList.remove('instant');
+});
+document.getElementById('new-chat')!.addEventListener('click', compose);
+pet.onCompose(compose); // the hotkey, pressed again on the collapsed bar
+// The chat list in a full-height box; Esc there goes back to where it was opened from.
+let listFrom: Mode = 'compose';
+function openList(): void {
+  listFrom = mode;
+  void showList(true);
+  setMode('chat'); // after the list is unhidden, so the box grows to hold it
+  search.focus(); // again: the list was not displayed yet when showList focused it
+}
+document.getElementById('plus')!.addEventListener('click', openList); // attachments come in v0.2
+// View chats: the chat already loaded, else the most recent one, else the (empty) list.
+document.getElementById('view-chats')!.addEventListener('click', async () => {
+  if (messages.childElementCount) return expand('chat');
+  const [latest] = await pet.listChats();
+  if (latest) pet.openChat(latest.id); // main answers with chat:open, which lands in chat mode
+  else openList();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && compact && mode !== 'collapsed') collapse();
+});
+let inside = false;
+let dragging = false;
+let mouse = { x: -1, y: -1 }; // the last (forwarded) mouse position; off the page once it left the window
+// Re-checked on every move and mode change, so the click-through state can't go stale.
+function checkInside(): void {
+  if (!compact) return;
+  const now = dragging || !!document.elementFromPoint(mouse.x, mouse.y)?.closest(mode === 'chat' ? '#box' : '#bar');
+  if (now !== inside) pet.setMouseInside((inside = now));
+}
+document.addEventListener('mousemove', (e) => {
+  mouse = { x: e.clientX, y: e.clientY };
+  checkInside();
+});
+document.documentElement.addEventListener('mouseleave', () => {
+  mouse = { x: -1, y: -1 };
+  checkInside();
+});
+// The drawn part (the bar, and in chat mode the whole box) drags the window from anywhere but its controls, the
+// message text (kept selectable) and a scrollbar; main moves the window to follow the cursor.
+const boxEl = document.getElementById('box')!;
+boxEl.addEventListener('pointerdown', (e) => {
+  const t = e.target as HTMLElement;
+  if (!compact || e.button !== 0 || !t.closest(mode === 'chat' ? '#box' : '#bar')) return;
+  if (t.closest('button, textarea, input, a, .msg, #chat-list') || (t.scrollHeight > t.clientHeight && e.offsetX > t.clientWidth)) return;
+  boxEl.setPointerCapture(e.pointerId);
+  dragging = true;
+  pet.dragBox('start');
+});
+document.addEventListener('selectstart', (e) => dragging && e.preventDefault()); // a drag across the messages selects nothing
+boxEl.addEventListener('pointermove', () => {
+  if (dragging) pet.dragBox('move');
+});
+function endDrag(): void {
+  if (!dragging) return;
+  dragging = false;
+  pet.dragBox('end');
+  checkInside();
+}
+boxEl.addEventListener('pointerup', endDrag);
+boxEl.addEventListener('lostpointercapture', endDrag);
+
+compact = await pet.isCompact();
+if (compact) setMode('collapsed');
 resetChat(chatId);

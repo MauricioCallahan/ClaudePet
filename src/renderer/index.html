@@ -7,23 +7,37 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <header>
-      <span>ClaudePet</span>
-      <span>
-        <button id="chats-button" aria-expanded="false" aria-controls="chats">Chats</button>
-        <button id="close" aria-label="Close">×</button>
-      </span>
-    </header>
-    <main id="messages"></main>
-    <section id="chats" aria-label="Chats" hidden>
-      <input id="search" type="search" placeholder="Search chats…" aria-label="Search chats" />
-      <ul id="chat-list"></ul>
-    </section>
-    <div id="thinking" role="status" aria-live="polite"></div>
-    <form id="form">
-      <textarea id="input" rows="2" placeholder="Message Claude…" aria-label="Message"></textarea>
-      <button type="submit" id="send">Send</button>
-    </form>
+    <div id="box">
+      <header>
+        <span>ClaudePet</span>
+        <span>
+          <button id="chats-button" aria-expanded="false" aria-controls="chats">Chats</button>
+          <button id="close" aria-label="Close">×</button>
+        </span>
+      </header>
+      <main id="messages"></main>
+      <section id="chats" aria-label="Chats" hidden>
+        <input id="search" type="search" placeholder="Search chats…" aria-label="Search chats" />
+        <ul id="chat-list"></ul>
+      </section>
+      <div id="thinking" role="status" aria-live="polite"></div>
+      <div id="bar">
+        <div class="pill compact-only">
+          <button type="button" id="new-chat" aria-label="New chat">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" /></svg>
+          </button>
+          <span class="divider"></span>
+          <button type="button" id="view-chats" aria-label="View chats">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5z" /></svg>
+          </button>
+        </div>
+        <form id="form">
+          <button type="button" id="plus" class="compact-only" aria-label="Chats">+</button>
+          <textarea id="input" rows="2" placeholder="Message Claude…" aria-label="Message"></textarea>
+          <button type="submit" id="send">Send</button>
+        </form>
+      </div>
+    </div>
     <script type="module" src="renderer.js"></script>
   </body>
 </html>

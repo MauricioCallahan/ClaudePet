@@ -6,10 +6,10 @@ import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
 import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
-import { fitPosition } from './bounds';
+import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
-import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings } from './settings';
-import { createPet, playRow, setPet, setPetEnabled } from './petWindow';
+import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, uiSettings } from './settings';
+import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
 import { COLUMNS, sheetUrl, type Pet } from './petFormat';
 import { initPicker, openPicker, pickerChanged, pickerWindow, type PickerItem } from './pickerWindow';
@@ -21,32 +21,86 @@ let win: BrowserWindow | null = null;
 let isQuitting = false;
 const MAX_MESSAGE_LENGTH = 10_000;
 
+// Compact mode (ui.compact): one transparent window with the bar drawn in CSS, and MARGIN of transparent room
+// around it for the shadow (the top margin is also the gap under the pet). The renderer owns the mode, main the bounds.
+const FULL = { width: 360, height: 480 }; // the full box; settings.x/y is its top-left in both modes
+const MARGIN = 12;
+const BAR_HEIGHT = 52; // the compose bar; the collapsed pill sits at the bottom of the same window
+const COMPACT_WIDTH = FULL.width + 2 * MARGIN;
+const MODES = ['collapsed', 'compose', 'chat'] as const;
+type Mode = (typeof MODES)[number];
+let compact = false; // read once at startup, like the hotkey
+let mode: Mode = 'collapsed'; // from the renderer's last box:fit
+let drawnHeight = BAR_HEIGHT; // chat mode: the box height the renderer asked for
+let anchor = { cx: 0, bottom: 0 }; // the window's bottom-center; only a drag moves it, never a clamp
+let boxRect: Rect | undefined; // the bounds last set, so a drag never reads back a drifted size
+let firstFit = true; // the compact box shows once the renderer has drawn its first mode
+
+// Sizes the compact window for the mode from the anchor. Always setBounds with the size:
+// setPosition and the constructor let a transparent, non-resizable window drift a few pixels larger.
+function fitBox(): void {
+  if (!win) return;
+  const height = (mode === 'chat' ? drawnHeight : BAR_HEIGHT) + 2 * MARGIN;
+  const display = screen.getDisplayNearestPoint({ x: Math.round(anchor.cx), y: Math.round(anchor.bottom) });
+  anchor = anchorOnScreen(anchor, COMPACT_WIDTH, display); // a monitor unplugged since the last drag
+  boxRect = compactBounds(anchor, { width: COMPACT_WIDTH, height }, PET_SIZE.height, display.workArea);
+  win.setBounds(boxRect);
+}
+
+// The box follows the cursor while the bar, the chat box or the pet is held; the renderers only say start/move/end.
+let grab: { dx: number; dy: number } | null = null; // where on the window the pointer took hold
+function dragBox(phase: unknown): void {
+  if (!win || !boxRect) return;
+  const c = screen.getCursorScreenPoint();
+  if (phase === 'start') grab = { dx: c.x - boxRect.x, dy: c.y - boxRect.y };
+  if (!grab || (phase !== 'move' && phase !== 'end')) return;
+  boxRect = { ...boxRect, x: c.x - grab.dx, y: c.y - grab.dy };
+  win.setBounds(boxRect);
+  if (phase === 'end') {
+    grab = null;
+    anchor = { cx: boxRect.x + boxRect.width / 2, bottom: boxRect.y + boxRect.height };
+    fitBox(); // dropped too high: moves down so the pet fits
+    saveAnchor();
+  }
+}
+
+// Stored as the full box's top-left, so turning compact mode off or on keeps the bar in the same place.
+const saveAnchor = () => saveSettings({ x: Math.round(anchor.cx - FULL.width / 2), y: Math.round(anchor.bottom - MARGIN - FULL.height) });
+
 function createWindow(): void {
-  const size = { width: 360, height: 480 };
-  const { x, y } = loadSettings();
+  const settings = loadSettings();
+  compact = uiSettings(settings).compact;
+  const { x, y } = settings;
   const pos =
     typeof x === 'number' && typeof y === 'number'
       ? fitPosition(
           { x, y },
-          size,
+          FULL,
           screen.getAllDisplays().map((d) => d.workArea),
           screen.getPrimaryDisplay().workArea,
         )
-      : {};
+      : undefined;
+  const shape = compact
+    ? { width: COMPACT_WIDTH, height: BAR_HEIGHT + 2 * MARGIN, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: false, show: false }
+    : { ...pos, ...FULL, minWidth: 280, minHeight: 320 };
   win = new BrowserWindow({
-    ...pos,
-    ...size,
+    ...shape,
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    minWidth: 280,
-    minHeight: 320,
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+  if (compact) {
+    const area = screen.getPrimaryDisplay().workArea;
+    const full = pos ?? { x: area.x + (area.width - FULL.width) / 2, y: area.y + (area.height - FULL.height) / 2 }; // centered, like the full box
+    anchor = { cx: full.x + FULL.width / 2, bottom: full.y + FULL.height + MARGIN };
+    fitBox();
+    win.setIgnoreMouseEvents(true, { forward: true }); // clicks pass through until the renderer reports the mouse over the bar
+  }
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
 
   // Links in replies open in the default browser, never inside the box.
@@ -66,6 +120,7 @@ function createWindow(): void {
   const w = win;
   let timer: NodeJS.Timeout | undefined;
   const save = () => {
+    if (compact) return saveAnchor();
     const [px, py] = w.getPosition();
     saveSettings({ x: px, y: py });
   };
@@ -91,6 +146,13 @@ function createWindow(): void {
     mood.shown();
   });
   w.on('hide', refreshTray);
+  if (!compact) return;
+  // A click anywhere outside the box (it passes through the transparent margin) takes focus away: back to the bar.
+  // The pet window can't take focus, so pressing the pet (to drag) leaves the box as it is.
+  w.on('blur', () => {
+    if (mode !== 'collapsed') w.webContents.send('box:collapse', false);
+  });
+  w.on('hide', () => w.webContents.send('box:collapse', true)); // so it always reopens as the bar, with no morph left to play
 }
 
 // focus() alone does nothing while the window is hidden in the tray, so show first.
@@ -311,6 +373,14 @@ export function toggleWindow(): void {
   else showWindow();
 }
 
+// The global hotkey. Visible but behind another app: bring it forward instead of hiding it.
+// Pressed again on the focused, collapsed compact bar: open the new chat input.
+export function onHotkey(): void {
+  if (win?.isVisible() && !win.isFocused()) showWindow();
+  else if (compact && win?.isVisible() && mode === 'collapsed') win.webContents.send('chat:compose');
+  else toggleWindow();
+}
+
 const DEFAULT_HOTKEY = 'CommandOrControl+,';
 let hotkey = '';
 
@@ -319,11 +389,7 @@ export function registerHotkey(accel: string): boolean {
   if (accel === hotkey) return true;
   let ok = false;
   try {
-    // Visible but behind another app: bring it forward instead of hiding it.
-    ok = globalShortcut.register(accel, () => {
-      if (win?.isVisible() && !win.isFocused()) showWindow();
-      else toggleWindow();
-    });
+    ok = globalShortcut.register(accel, onHotkey);
   } catch {
     // register() throws on a malformed accelerator in settings.json
   }
@@ -382,6 +448,30 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('chat:delete', (_e, id: unknown) => {
       if (isChatId(id)) void deleteChat(id);
     });
+    // Compact box: the renderer reports its mode and wanted height, and where the mouse is; main sizes and moves the window.
+    ipcMain.handle('ui:compact', () => compact);
+    const fromBox = (e: Electron.IpcMainEvent) => compact && !!win && e.sender === win.webContents;
+    ipcMain.on('box:fit', (e, m: unknown, height: unknown) => {
+      if (!fromBox(e) || !MODES.includes(m as Mode) || typeof height !== 'number' || !Number.isFinite(height)) return;
+      mode = m as Mode;
+      drawnHeight = Math.min(Math.max(Math.round(height), BAR_HEIGHT), FULL.height);
+      fitBox();
+      if (firstFit) {
+        firstFit = false;
+        win!.show();
+      }
+    });
+    ipcMain.on('box:mouse', (e, inside: unknown) => {
+      if (fromBox(e) && typeof inside === 'boolean') win!.setIgnoreMouseEvents(!inside, { forward: true });
+    });
+    // Dragged in JS, not with -webkit-app-region: Windows sends no mouse events over a drag region,
+    // so the renderer could never tell main to stop ignoring clicks there.
+    ipcMain.on('box:drag', (e, phase: unknown) => {
+      if (fromBox(e)) dragBox(phase);
+    });
+    // Windows moves the box off a removed monitor by itself; refit at once so the anchor and boxRect follow,
+    // or the next resize or drag would put it back where no screen is.
+    screen.on('display-removed', () => compact && fitBox());
     ipcMain.handle('chat:load', (_e, id: unknown) => (isChatId(id) ? loadMessages(id) : []));
     ipcMain.handle('chats:list', async (_e, query: unknown) => {
       const q = typeof query === 'string' ? query.slice(0, 200) : '';
@@ -396,7 +486,7 @@ if (!app.requestSingleInstanceLock()) {
     petScan = scanPets();
     petSetting = petSettings(loadSettings());
     showChosenPet();
-    win?.webContents.once('did-finish-load', () => win && createPet(win, toggleWindow, shownPet, petSetting.enabled, (p) => void installPetFromZip(p)));
+    win?.webContents.once('did-finish-load', () => win && createPet(win, shownPet, petSetting.enabled, (p) => void installPetFromZip(p), (phase) => compact && dragBox(phase)));
     initPicker({ list: pickerItems, choose: choosePetById, install: () => void installPetDialog(), drop: (p) => void installPetFromZip(p) });
     createTray({
       toggle: toggleWindow,

@@ -90,6 +90,7 @@ Rows, top to bottom, with Codex's frame counts and per-frame timings:
 Rows 9 and 10 exist only in v2 sheets: sixteen still poses looking clockwise from up, used by Codex to follow the pointer. "running" (row 7) means working or thinking, not literal running. The first idle frame (the top-left cell) is the pet's still picture, used for previews and when reduced motion is on.
 
 ## Known issues
+- The chat box opens as a small bar under the pet and grows into the chat as you talk. If you prefer the full-size box, set `"ui": { "compact": false }` in `%APPDATA%\ClaudePet\settings.json` and restart.
 - ClaudePet claims **Ctrl+,** while it runs, so apps that use it for their own Settings (for example VS Code) lose that shortcut. To use another key, set `"hotkey"` (an [Electron accelerator](https://www.electronjs.org/docs/latest/api/accelerator), e.g. `"Alt+Space"`) in `%APPDATA%\ClaudePet\settings.json` and restart. A settings panel will replace this in v0.2.
 
 ## License

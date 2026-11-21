@@ -12,7 +12,7 @@ let profile: string;
 
 async function launch(settings?: object): Promise<void> {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
-  if (settings) fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify(settings));
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ ...settings, ui: { compact: false } })); // these specs test the full box
   app = await _electron.launch({ args: ['.', `--user-data-dir=${profile}`], env: { ...process.env, CLAUDEPET_BRIDGE: 'fake' } });
   page = await app.firstWindow();
   await expect(page.locator('#messages .msg.claude').last()).toHaveText(/ClaudePet/);
@@ -80,11 +80,11 @@ test.describe('with the pet on', () => {
     await expect.poll(async () => (await windows()).petVisible).toBe(true);
   });
 
-  test('clicking the pet hides the box, and the pet with it', async () => {
+  test('clicking the pet leaves the box and the pet shown', async () => {
     const pet = app.windows().find((p) => p.url().endsWith('pet.html'))!;
     await pet.click('#pet');
-    await expect.poll(async () => (await windows()).boxVisible).toBe(false);
-    expect((await windows()).petVisible).toBe(false);
+    await page.waitForTimeout(500); // the box used to hide on a click by now
+    expect(await windows()).toMatchObject({ boxVisible: true, petVisible: true });
   });
 });
 

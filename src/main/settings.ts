@@ -8,6 +8,7 @@ export interface Settings {
   hotkey?: string; // Electron accelerator, default CommandOrControl+,
   model?: string; // Claude Code model alias or full id, default sonnet (picker UI in v0.2)
   pet?: { enabled?: unknown; id?: unknown }; // read through petSettings; saveSettings merges shallowly, so save the whole object
+  ui?: { compact?: unknown }; // read through uiSettings, once at startup
 }
 
 export const DEFAULT_PET_ID = 'pip'; // the built-in pet in assets/pets/pip
@@ -22,6 +23,12 @@ export function petSettings(s: Settings): { enabled: boolean; id: string } {
     enabled: typeof p.enabled === 'boolean' ? p.enabled : true,
     id: isPetId(p.id) ? p.id : DEFAULT_PET_ID,
   };
+}
+
+// compact: the box opens as the small pet bar and grows into the chat (default); false keeps the full 360x480 box.
+export function uiSettings(s: Settings): { compact: boolean } {
+  const u = s.ui && typeof s.ui === 'object' ? s.ui : {};
+  return { compact: typeof u.compact === 'boolean' ? u.compact : true };
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

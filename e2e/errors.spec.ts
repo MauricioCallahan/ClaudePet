@@ -23,6 +23,7 @@ async function send(text: string): Promise<void> {
 
 test.beforeAll(async () => {
   profile = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-e2e-'));
+  fs.writeFileSync(path.join(profile, 'settings.json'), JSON.stringify({ ui: { compact: false } })); // these specs test the full box
   const bin = path.join(profile, 'bin');
   fs.mkdirSync(bin);
   for (const f of ['fake-claude.cmd', 'fake-claude.js']) fs.copyFileSync(path.join(__dirname, 'fixtures', f), path.join(bin, f));

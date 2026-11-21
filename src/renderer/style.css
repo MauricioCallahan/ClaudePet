@@ -92,3 +92,12 @@ body[data-mode]:not([data-mode="collapsed"]) .pill { opacity: 0; visibility: hid
 /* Chat mode: the drawn box holds the messages (or the chat list) above the bar. */
 body[data-mode="chat"] #box { background: var(--surface); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
 body[data-mode="chat"] #box #bar { box-shadow: none; border-radius: 0; border-top: 1px solid #eee; box-sizing: border-box; }
+body[data-mode] #messages { position: relative; } /* chatHeight() measures message offsets from it */
+/* New messages fade in, so the instant window resize reads as content appearing above a bar that stays put. */
+body[data-mode="chat"] .msg { animation: msg-in 150ms ease-out; }
+@keyframes msg-in { from { opacity: 0; } }
+/* Chat → collapsed: the messages and the box fade out first (renderer.ts collapse()), then the bar morphs back. */
+body[data-mode="chat"] #box { transition: background-color 150ms, box-shadow 150ms; }
+body[data-mode="chat"] :is(#messages, #thinking) { transition: opacity 150ms; }
+body.leaving #box { background: transparent; box-shadow: none; }
+body.leaving :is(#messages, #thinking) { opacity: 0; }

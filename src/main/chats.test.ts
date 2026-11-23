@@ -1,9 +1,7 @@
 import test from 'node:test';
-import fs from 'node:fs';
-import os from 'node:os';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { appendTo, isChatId, makeTitle, matches, parseChats, parseMessages, recent, rename, setSession, transcriptPath, upsert } from './chats';
+import { isChatId, makeTitle, matches, parseChats, parseMessages, recent, rename, setSession, transcriptPath, upsert } from './chats';
 
 test('parseChats keeps valid entries and drops malformed ones', () => {
   const text = JSON.stringify([{ id: 'a', title: 't', updatedAt: 1 }, { id: 2 }, null, 'x']);
@@ -85,36 +83,4 @@ test('transcriptPath names the file Claude Code writes, and only for a uuid', ()
     path.join('C:\\Users\\me\\.claude', 'projects', 'C--Users-me-AppData-Roaming-claudepet-workspace', `${s}.jsonl`),
   );
   for (const bad of ['', '../../x', `${s}/../x`, 'not-a-uuid']) assert.equal(transcriptPath('c', 'w', bad), undefined, bad);
-});
-test('appendTo adds to the history, starts a missing file, and never overwrites one it cannot read', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-chats-'));
-  const at = (n: number) => ({ role: 'user' as const, text: `m${n}`, at: n });
-  const read = (f: string) => JSON.parse(fs.readFileSync(f, 'utf8'));
-  try {
-    const f = path.join(dir, 'a.json');
-    appendTo(f, at(1));
-    appendTo(f, at(2));
-    assert.deepEqual(read(f), [at(1), at(2)]);
-
-    const bad = path.join(dir, 'b.json');
-    fs.writeFileSync(bad, '[{"role":"user","text":"old",'); // cut short
-    appendTo(bad, at(3));
-    assert.deepEqual(read(bad), [at(3)]);
-    const aside = fs.readdirSync(dir).filter((n) => n.startsWith('b.json.') && n.endsWith('.bad'));
-    assert.equal(aside.length, 1);
-    assert.equal(fs.readFileSync(path.join(dir, aside[0]), 'utf8'), '[{"role":"user","text":"old",'); // the old text is kept
-
-    const locked = path.join(dir, 'c.json');
-    fs.mkdirSync(locked); // reading it fails with something other than ENOENT, like a locked file
-    const error = console.error;
-    console.error = () => {};
-    try {
-      appendTo(locked, at(4));
-    } finally {
-      console.error = error;
-    }
-    assert.ok(fs.statSync(locked).isDirectory()); // left alone
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });

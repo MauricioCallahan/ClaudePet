@@ -131,33 +131,6 @@ function writeAtomic(target: string, data: unknown): void {
   }
 }
 
-// Read-modify-write, so only a missing file may count as an empty history: anything else would be overwritten.
-// A file that can't be read now (locked by a backup or antivirus) is left alone and this message is not stored;
-// one that isn't a JSON array is kept aside as <id>.json.<time>.bad and the chat starts a new file.
-export function appendTo(target: string, msg: Message): void {
-  let text = '[]';
-  try {
-    text = fs.readFileSync(target, 'utf8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return console.error(`Could not read ${target}, message not saved:`, err);
-  }
-  let old: Message[] | null = null;
-  try {
-    const v = JSON.parse(text);
-    if (Array.isArray(v)) old = parseMessages(text);
-  } catch {
-    // not JSON: kept aside below
-  }
-  if (!old) {
-    try {
-      fs.renameSync(target, `${target}.${Date.now()}.bad`);
-    } catch (err) {
-      return console.error(`Could not keep the unreadable ${target} aside, message not saved:`, err);
-    }
-  }
-  writeAtomic(target, [...(old ?? []), msg]);
-}
-
 export const deleteMessages = (id: string): void => fs.rmSync(messagesFile(id), { force: true });
 export const saveChats = (chats: Chat[]): void => writeAtomic(file(), chats);
-export const appendMessage = (id: string, msg: Message): void => appendTo(messagesFile(id), msg);
+export const saveMessages = (id: string, msgs: Message[]): void => writeAtomic(messagesFile(id), msgs);

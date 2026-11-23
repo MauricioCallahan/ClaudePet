@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { deleteMessages, isChatId, loadChats, appendMessage, loadMessages, matches, readMessages, recent, rename, saveChats, setSession, transcriptPath, upsert, type Chat } from './chats';
+import { deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -71,8 +71,15 @@ function createWindow(): void {
   const settings = loadSettings();
   compact = uiSettings(settings).compact;
   const { x, y } = settings;
-  const saved = typeof x === 'number' && typeof y === 'number' ? { x, y } : undefined;
-  const pos = saved && fitPosition(saved, FULL, screen.getAllDisplays().map((d) => d.workArea), screen.getPrimaryDisplay().workArea);
+  const pos =
+    typeof x === 'number' && typeof y === 'number'
+      ? fitPosition(
+          { x, y },
+          FULL,
+          screen.getAllDisplays().map((d) => d.workArea),
+          screen.getPrimaryDisplay().workArea,
+        )
+      : undefined;
   const shape = compact
     ? { width: COMPACT_WIDTH, height: BAR_HEIGHT + 2 * MARGIN, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: false, show: false }
     : { ...pos, ...FULL, minWidth: 280, minHeight: 320 };
@@ -89,8 +96,7 @@ function createWindow(): void {
   });
   if (compact) {
     const area = screen.getPrimaryDisplay().workArea;
-    // The saved spot, not pos: a bar near the top puts the full box's header above the screen, and fitBox checks the bar itself.
-    const full = saved ?? { x: area.x + (area.width - FULL.width) / 2, y: area.y + (area.height - FULL.height) / 2 }; // centered, like the full box
+    const full = pos ?? { x: area.x + (area.width - FULL.width) / 2, y: area.y + (area.height - FULL.height) / 2 }; // centered, like the full box
     anchor = { cx: full.x + FULL.width / 2, bottom: full.y + FULL.height + MARGIN };
     fitBox();
     win.setIgnoreMouseEvents(true, { forward: true }); // clicks pass through until the renderer reports the mouse over the bar
@@ -240,7 +246,7 @@ async function runReply(id: string, text: string): Promise<void> {
     }
   } finally {
     // Keep what streamed, even when Stop or an error cut it short; a chat deleted meanwhile stays deleted.
-    if (reply && chats.some((c) => c.id === id)) appendMessage(id, { role: 'claude', text: reply, at: Date.now() });
+    if (reply && chats.some((c) => c.id === id)) saveMessages(id, [...loadMessages(id), { role: 'claude', text: reply, at: Date.now() }]);
     inflight = null;
     refreshTray();
   }
@@ -422,7 +428,7 @@ if (!app.requestSingleInstanceLock()) {
       const now = Date.now();
       chats = upsert(chats, id, text, now);
       saveChats(chats);
-      if (retry !== true) appendMessage(id, { role: 'user', text, at: now }); // a Retry's message is already stored
+      if (retry !== true) saveMessages(id, [...loadMessages(id), { role: 'user', text, at: now }]); // a Retry's message is already stored
       refreshTray();
       running = runReply(id, text);
     });

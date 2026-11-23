@@ -189,19 +189,3 @@ test.describe('near the top of the screen', () => {
     expect(offBy(spot((await windows()).box), bar)).toBeLessThanOrEqual(PX_TOLERANCE);
   });
 });
-
-// Saved spots are the full box's top-left, so a bar in the upper part of the screen saves a y above the screen.
-test.describe('a bar saved near the top', () => {
-  let area: { x: number; y: number };
-  test.beforeAll(async () => {
-    await launch(); // only to learn the work area
-    area = (await windows()).area;
-    await quit();
-    await launch({ x: area.x + 100, y: area.y - 300 }); // what a bar dropped about 190 px below the top saves
-  });
-  test.afterAll(quit);
-
-  test('reopens where it was, not in the corner', async () => {
-    expect(offBy(spot((await windows()).box), { cx: area.x + 100 + 180, bottom: area.y - 300 + 492 })).toBeLessThanOrEqual(PX_TOLERANCE);
-  });
-});

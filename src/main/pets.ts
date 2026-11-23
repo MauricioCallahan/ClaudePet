@@ -48,9 +48,11 @@ export function listPets(sources: { dir: string; source: PetSource }[]): PetScan
       const d = path.join(dir, name);
       try {
         const p = loadPet(d);
-        if (p.manifest.id !== name) throw new Error(`the folder name "${name}" does not match its id "${p.manifest.id}"`);
-        const first = pets.find((q) => q.manifest.id === name);
-        if (first) throw new Error(first.source === 'built-in' ? `"${name}" is a built-in pet` : `the ClaudePet copy of "${name}" is used instead`);
+        // ClaudePet installs a pet into <id>\; Codex's folder is only read, and its installer may name folders its own way.
+        if (source !== 'codex' && p.manifest.id !== name) throw new Error(`the folder name "${name}" does not match its id "${p.manifest.id}"`);
+        const { id } = p.manifest;
+        const first = pets.find((q) => q.manifest.id === id);
+        if (first) throw new Error(first.source === 'built-in' ? `"${id}" is a built-in pet` : `the ClaudePet copy of "${id}" is used instead`);
         pets.push({ ...p, source });
       } catch (err) {
         skipped.push({ dir: d, reason: (err as Error).message });

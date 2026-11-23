@@ -38,8 +38,11 @@ test('parsePetJson names a missing or empty required field', () => {
     assert.throws(() => parse({ [k]: 5 }), new RegExp(`"${k}" is missing`));
   }
 });
+test('parsePetJson accepts Codex-style ids with capitals, underscores and dots', () => {
+  for (const id of ['Bastion_Tank', 'v1.2', 'a', 'A-b_c.d-9', 'a'.repeat(64)]) assert.equal(parse({ id }).id, id);
+});
 test('parsePetJson rejects an id that is not a safe folder name', () => {
-  for (const id of ['Bastion', '../x', 'a/b', '-x', 'a b', 'a'.repeat(65)]) assert.throws(() => parse({ id }), /id .* must be/);
+  for (const id of ['../x', '.x', 'x.', 'a/b', 'a\\b', '-x', 'a b', 'a:b', 'a'.repeat(65)]) assert.throws(() => parse({ id }), /id .* must be/);
 });
 test('parsePetJson rejects a sprite sheet path outside the pet folder', () => {
   for (const p of ['../x.webp', 'a/../../x.webp', '..\\x.webp', '/x.webp', 'C:\\x.webp', 'c:x.webp', '\\\\server\\x.webp', 'a//x.webp'])

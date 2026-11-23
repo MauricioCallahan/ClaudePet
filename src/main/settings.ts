@@ -13,8 +13,10 @@ export interface Settings {
 
 export const DEFAULT_PET_ID = 'pip'; // the built-in pet in assets/pets/pip
 
-// Pet ids become folder names under pets\, so only lowercase letters, digits and dashes.
-export const isPetId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(v);
+// Pet ids become folder names under pets\: letters (any case), digits, '_', '.' and '-', wide enough for Codex pets,
+// with no slash, colon or space, so an id is always one folder inside pets\. It may not start with '.' or '-',
+// nor end with '.' (Windows drops a trailing dot from a folder name).
+export const isPetId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9](?:[\w.-]{0,62}[\w-])?$/.test(v);
 
 // The settings file is hand-editable: any bad value falls back to its default.
 export function petSettings(s: Settings): { enabled: boolean; id: string } {

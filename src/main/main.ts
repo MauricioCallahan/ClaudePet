@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { deleteMessages, isChatId, loadChats, loadMessages, matches, readMessages, recent, rename, saveChats, saveMessages, setSession, transcriptPath, upsert, type Chat } from './chats';
+import { deleteMessages, isChatId, loadChats, appendMessage, loadMessages, matches, readMessages, recent, rename, saveChats, setSession, transcriptPath, upsert, type Chat } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -71,15 +71,8 @@ function createWindow(): void {
   const settings = loadSettings();
   compact = uiSettings(settings).compact;
   const { x, y } = settings;
-  const pos =
-    typeof x === 'number' && typeof y === 'number'
-      ? fitPosition(
-          { x, y },
-          FULL,
-          screen.getAllDisplays().map((d) => d.workArea),
-          screen.getPrimaryDisplay().workArea,
-        )
-      : undefined;
+  const saved = typeof x === 'number' && typeof y === 'number' ? { x, y } : undefined;
+  const pos = saved && fitPosition(saved, FULL, screen.getAllDisplays().map((d) => d.workArea), screen.getPrimaryDisplay().workArea);
   const shape = compact
     ? { width: COMPACT_WIDTH, height: BAR_HEIGHT + 2 * MARGIN, transparent: true, backgroundColor: '#00000000', hasShadow: false, resizable: false, show: false }
     : { ...pos, ...FULL, minWidth: 280, minHeight: 320 };
@@ -96,7 +89,8 @@ function createWindow(): void {
   });
   if (compact) {
     const area = screen.getPrimaryDisplay().workArea;
-    const full = pos ?? { x: area.x + (area.width - FULL.width) / 2, y: area.y + (area.height - FULL.height) / 2 }; // centered, like the full box
+    // The saved spot, not pos: a bar near the top puts the full box's header above the screen, and fitBox checks the bar itself.
+    const full = saved ?? { x: area.x + (area.width - FULL.width) / 2, y: area.y + (area.height - FULL.height) / 2 }; // centered, like the full box
     anchor = { cx: full.x + FULL.width / 2, bottom: full.y + FULL.height + MARGIN };
     fitBox();
     win.setIgnoreMouseEvents(true, { forward: true }); // clicks pass through until the renderer reports the mouse over the bar
@@ -172,6 +166,7 @@ let chats: Chat[] = [];
 
 const workspace = path.join(app.getPath('userData'), 'workspace'); // the cwd of every claude process
 const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
+const transcriptOf = (sessionId: string) => transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, sessionId);
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -187,6 +182,7 @@ const bridge: Bridge =
             saveChats(chats);
           },
         },
+        transcript: transcriptOf,
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
         model: () => loadSettings().model,
         instructions: () => {
@@ -246,7 +242,7 @@ async function runReply(id: string, text: string): Promise<void> {
     }
   } finally {
     // Keep what streamed, even when Stop or an error cut it short; a chat deleted meanwhile stays deleted.
-    if (reply && chats.some((c) => c.id === id)) saveMessages(id, [...loadMessages(id), { role: 'claude', text: reply, at: Date.now() }]);
+    if (reply && chats.some((c) => c.id === id)) appendMessage(id, { role: 'claude', text: reply, at: Date.now() });
     inflight = null;
     refreshTray();
   }
@@ -312,7 +308,8 @@ async function installPetFromZip(zipPath: string): Promise<void> {
   if (installing) return notify('Install in progress', 'Wait for the current pet install to finish.'); // one install at a time
   installing = true;
   try {
-    const { manifest } = await readPetZip(zipPath);
+    const read = await readPetZip(zipPath);
+    const { manifest } = read;
     const parent = pickerWindow();
     const replace = fs.existsSync(path.join(userPetsDir(), manifest.id));
     if (replace) {
@@ -320,7 +317,7 @@ async function installPetFromZip(zipPath: string): Promise<void> {
       const { response } = await (parent ? dialog.showMessageBox(parent, ask) : dialog.showMessageBox(ask));
       if (response !== 0) return;
     }
-    await installPet(zipPath, { petsDir: userPetsDir(), tmpRoot: petsTmpDir(), builtInDir: builtInPetsDir, replace });
+    await installPet(zipPath, { petsDir: userPetsDir(), tmpRoot: petsTmpDir(), builtInDir: builtInPetsDir, replace, read });
     refreshPets();
     choosePetById(manifest.id);
     openPicker();
@@ -354,15 +351,19 @@ async function deleteChat(id: string): Promise<void> {
   saveChats(chats);
   refreshTray();
   win?.webContents.send('chat:deleted', id);
-  try {
-    deleteMessages(id);
-    const transcript = chat.sessionId && transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, chat.sessionId);
-    if (transcript) {
-      fs.rmSync(transcript, { force: true });
-      fs.rmSync(transcript.slice(0, -'.jsonl'.length), { recursive: true, force: true }); // the session's side folder, if any
+  // Each file on its own, so one that is locked (antivirus, backup) does not keep the others on disk.
+  const remove = (what: string, rm: () => void) => {
+    try {
+      rm();
+    } catch (err) {
+      console.error(`Could not delete the ${what} of chat ${id}:`, err);
     }
-  } catch (err) {
-    console.error(`Could not delete the files of chat ${id}:`, err);
+  };
+  remove('messages', () => deleteMessages(id));
+  const transcript = chat.sessionId && transcriptOf(chat.sessionId);
+  if (transcript) {
+    remove('transcript', () => fs.rmSync(transcript, { force: true }));
+    remove('session folder', () => fs.rmSync(transcript.slice(0, -'.jsonl'.length), { recursive: true, force: true })); // the session's side folder, if any
   }
 }
 
@@ -428,7 +429,7 @@ if (!app.requestSingleInstanceLock()) {
       const now = Date.now();
       chats = upsert(chats, id, text, now);
       saveChats(chats);
-      if (retry !== true) saveMessages(id, [...loadMessages(id), { role: 'user', text, at: now }]); // a Retry's message is already stored
+      if (retry !== true) appendMessage(id, { role: 'user', text, at: now }); // a Retry's message is already stored
       refreshTray();
       running = runReply(id, text);
     });
@@ -493,8 +494,10 @@ if (!app.requestSingleInstanceLock()) {
       isVisible: () => !!win?.isVisible(),
       isThinking: () => !!inflight,
       // Switching chats ends the running reply so it cannot stream into the wrong chat.
-      newChat: () => {
+      // Waits for the reply to end, as openChat does: until then main would drop a message sent from the new chat.
+      newChat: async () => {
         inflight?.abort();
+        await running;
         mood.event('stop');
         showAndSend('chat:new');
       },

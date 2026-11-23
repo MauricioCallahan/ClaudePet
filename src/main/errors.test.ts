@@ -8,6 +8,7 @@ const samples: [string, number | null | undefined, string][] = [
   ['not-installed', 9009, "'claude' is not recognized as an internal or external command,\r\noperable program or batch file."],
   ['not-installed', undefined, 'spawn C:\\Users\\me\\.local\\bin\\claude.exe ENOENT'],
   ['not-installed', undefined, 'Claude Code is not installed.'],
+  ['outdated', 1, "claude exited with code 1: error: unknown option '--permission-prompts'"],
   ['not-signed-in', 1, 'Not logged in · Please run /login'],
   ['not-signed-in', 1, 'Invalid API key · Please run /login'],
   ['not-signed-in', 1, 'API Error: 401 OAuth token has expired. Please obtain a new token or refresh your existing token.'],
@@ -60,7 +61,7 @@ test('toBridgeError: a rejected rate_limit_event makes it the usage limit, whate
 test('describe: network and timeout errors offer Retry; the others do not', () => {
   assert.equal(describe('network', '').retry, true);
   assert.equal(describe('timeout', '').retry, true);
-  for (const c of ['not-installed', 'not-signed-in', 'usage-limit', 'unknown'] as const) assert.equal(describe(c, 'x').retry, undefined, c);
+  for (const c of ['not-installed', 'outdated', 'not-signed-in', 'usage-limit', 'unknown'] as const) assert.equal(describe(c, 'x').retry, undefined, c);
 });
 test('logLine: time, case, exit code and the error text on one line, cut to 300 characters', () => {
   const at = new Date(Date.UTC(2026, 10, 9, 12, 0, 0));
@@ -74,4 +75,7 @@ test('toBridgeError keeps the detail and exit code for the log', () => {
   const e = toBridgeError('Not logged in · Please run /login', 1);
   assert.equal(e.detail, 'Not logged in · Please run /login');
   assert.equal(e.code, 1);
+});
+test('describe: an outdated Claude Code says how to update it', () => {
+  assert.match(describe('outdated', "error: unknown option '--tools'").message, /`claude update`/);
 });

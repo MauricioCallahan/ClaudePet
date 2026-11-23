@@ -78,7 +78,7 @@ export function upsert(chats: Chat[], id: string, text: string, now: number): Ch
   return [next, ...chats.filter((c) => c.id !== id)];
 }
 
-export function setSession(chats: Chat[], id: string, sessionId: string): Chat[] {
+export function setSession(chats: Chat[], id: string, sessionId: string | undefined): Chat[] {
   return chats.map((c) => (c.id === id ? { ...c, sessionId } : c));
 }
 
@@ -88,10 +88,13 @@ export function rename(chats: Chat[], id: string, title: string): Chat[] {
   return t ? chats.map((c) => (c.id === id ? { ...c, title: t } : c)) : chats;
 }
 
+// A session id names a transcript file and becomes a --resume argument, so only a plain UUID is ever used.
+export const isSessionId = (s: unknown): s is string => typeof s === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(s);
+
 // Where Claude Code keeps a session's transcript: its folder name is the cwd with every
-// non-alphanumeric character turned into '-' (checked against claude 2.1). Only a uuid may name a file.
+// non-alphanumeric character turned into '-' (checked against claude 2.1).
 export function transcriptPath(configDir: string, cwd: string, sessionId: string): string | undefined {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return undefined;
+  if (!isSessionId(sessionId)) return undefined;
   return path.join(configDir, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${sessionId}.jsonl`);
 }
 
@@ -131,6 +134,33 @@ function writeAtomic(target: string, data: unknown): void {
   }
 }
 
+// Read-modify-write, so only a missing file may count as an empty history: anything else would be overwritten.
+// A file that can't be read now (locked by a backup or antivirus) is left alone and this message is not stored;
+// one that isn't a JSON array is kept aside as <id>.json.<time>.bad and the chat starts a new file.
+export function appendTo(target: string, msg: Message): void {
+  let text = '[]';
+  try {
+    text = fs.readFileSync(target, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return console.error(`Could not read ${target}, message not saved:`, err);
+  }
+  let old: Message[] | null = null;
+  try {
+    const v = JSON.parse(text);
+    if (Array.isArray(v)) old = parseMessages(text);
+  } catch {
+    // not JSON: kept aside below
+  }
+  if (!old) {
+    try {
+      fs.renameSync(target, `${target}.${Date.now()}.bad`);
+    } catch (err) {
+      return console.error(`Could not keep the unreadable ${target} aside, message not saved:`, err);
+    }
+  }
+  writeAtomic(target, [...(old ?? []), msg]);
+}
+
 export const deleteMessages = (id: string): void => fs.rmSync(messagesFile(id), { force: true });
 export const saveChats = (chats: Chat[]): void => writeAtomic(file(), chats);
-export const saveMessages = (id: string, msgs: Message[]): void => writeAtomic(messagesFile(id), msgs);
+export const appendMessage = (id: string, msg: Message): void => appendTo(messagesFile(id), msg);

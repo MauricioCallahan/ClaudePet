@@ -25,7 +25,7 @@ test('a non-boolean pet.enabled falls back to on', () => {
   for (const enabled of ['false', 0, null]) assert.equal(petSettings({ pet: { enabled } }).enabled, true);
 });
 test('a bad pet.id falls back to the default pet', () => {
-  for (const id of ['../x', 'Holy', '', '-x', 'a'.repeat(65), 5, null]) assert.equal(petSettings({ pet: { id } }).id, DEFAULT_PET_ID);
+  for (const id of ['../x', 'x.', '', '-x', 'a'.repeat(65), 5, null]) assert.equal(petSettings({ pet: { id } }).id, DEFAULT_PET_ID);
 });
 test('a pet setting that is not an object falls back to the defaults', () => {
   for (const pet of [true, 'cat', null]) assert.deepEqual(petSettings({ pet } as never), { enabled: true, id: DEFAULT_PET_ID });

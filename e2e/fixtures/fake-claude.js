@@ -10,6 +10,8 @@ let prompt = '';
 process.stdin.on('data', (d) => (prompt += d));
 process.stdin.on('end', () => {
   out({ type: 'system', subtype: 'init', session_id });
+  // Like claude, the user's turn reaches the session transcript as the turn starts.
+  if (process.env.FAKE_TRANSCRIPT) fs.appendFileSync(process.env.FAKE_TRANSCRIPT, JSON.stringify({ type: 'user', prompt }) + '\n');
   if (prompt.startsWith('/hang')) {
     say(`pid=${process.pid};`);
     setInterval(() => {}, 1000); // never finishes: only Stop or Quit ends it

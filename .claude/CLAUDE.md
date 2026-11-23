@@ -28,7 +28,7 @@ At the beginning of each new session, include the phrase "Project context verifi
 
 
 ### After the bullet is complete (all 5 tasks committed)
-1. Run `npm run e2e` (once it exists) and make sure it passes, then run /ponytail-review once, over the combined diff of that bullet's branch
+1. Run `npm run e2e` (once it exists) and `npm run e2e:real` (the app against the real Claude Code; spends a little usage) and make sure both pass, then run /ponytail-review once, over the combined diff of that bullet's branch
    (`git diff development...HEAD`), and read every finding.
 2. **Must fix** (bug, security, data loss, crash): do not ask. Plan the fix and implement it.
 3. **Should fix / Nice to have**, or anything that changes a later task: stop and

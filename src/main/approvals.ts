@@ -44,10 +44,13 @@ export interface Card {
   total: number;
 }
 
-export const DENIED = 'The user denied this tool call.';
-export const STOPPED = 'The reply was stopped before the user answered.';
-export const TIMED_OUT = 'The user did not answer within 5 minutes, so the tool was not run.';
-export const RULE_DENIED = 'A rule in ClaudePet settings denies this tool.';
+// Claude reads these as the tool's error. The brief-reply wish rides along because a resumed chat keeps its
+// first system prompt; it is worded as the user's preference, since a command inside a tool result reads like injection.
+const BRIEF = ' The user prefers a one-sentence acknowledgement; explain more or suggest alternatives only if they ask.';
+export const DENIED = 'The user denied this tool call.' + BRIEF;
+export const STOPPED = 'The reply was stopped before the user answered.'; // Claude never answers this one
+export const TIMED_OUT = 'The user did not answer within 5 minutes, so the tool was not run.' + BRIEF;
+export const RULE_DENIED = 'A rule in ClaudePet settings denies this tool.' + BRIEF;
 export const ANSWER_MS = 5 * 60_000; // below MCP_TOOL_TIMEOUT_MS, so ClaudePet always answers first
 
 interface Pending {

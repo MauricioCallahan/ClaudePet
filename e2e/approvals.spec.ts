@@ -68,7 +68,7 @@ for (const compact of [false, true]) {
       await ask('/approve WebFetch');
       await card().locator('[data-answer="deny"]').click();
       await expect(card()).toBeHidden();
-      await expect(reply().locator('.part')).toHaveText('WebFetch: denied (The user denied this tool call.)');
+      await expect(reply().locator('.part')).toHaveText(/^WebFetch: denied \(The user denied this tool call\. The user prefers a one-sentence acknowledgement/);
       await expect(reply().locator('.tool.failed')).toHaveCount(1);
       await idle();
       await expect(page.locator('#messages .msg.claude', { hasText: 'tools are off' })).toHaveCount(0);

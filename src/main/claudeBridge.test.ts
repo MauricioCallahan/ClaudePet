@@ -300,7 +300,7 @@ test('a turn that ends with Retry offered is taken out of the session, so Retry 
 
 // The fake claude's "/approve" asks through the approval server from mcp-run.json, like claude does.
 test('a tool the user denied reaches Claude and the reply ends normally; with no approval tool it is an error', async () => {
-  const { ApprovalPipe, Approvals } = await import('./approvals');
+  const { ApprovalPipe, Approvals, DENIED } = await import('./approvals');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-approve-'));
   const pipe = new ApprovalPipe();
   await pipe.listen();
@@ -325,7 +325,7 @@ test('a tool the user denied reaches Claude and the reply ends normally; with no
     return text;
   };
   try {
-    assert.equal(await run(bridge(true)), 'WebFetch: denied (The user denied this tool call.)');
+    assert.equal(await run(bridge(true)), `WebFetch: denied (${DENIED})`);
     await assert.rejects(run(bridge(false)), /Web fetch is off/);
   } finally {
     pipe.dispose();

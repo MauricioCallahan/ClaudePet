@@ -37,7 +37,7 @@ test('real Claude Code: a failed turn is taken out of the transcript and the ses
   });
   const run = async (text: string) => {
     let reply = '';
-    for await (const chunk of bridge.send('real', text, new AbortController().signal)) reply += chunk;
+    for await (const chunk of bridge.send('real', text, new AbortController().signal)) if (typeof chunk === 'string') reply += chunk;
     return reply;
   };
   const file = () => transcriptPath(configDir, cwd, session!)!;

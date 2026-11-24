@@ -2,6 +2,7 @@ import DOMPurify from './vendor/purify.es.mjs';
 import { addCopyButtons, codeToCopy } from './codeBlocks.js';
 import { renderMarkdown } from './markdown.js';
 import { shouldStick } from './scroll.js';
+import { toolLabel } from './toolLabel.js';
 
 const purify = DOMPurify(window);
 
@@ -84,7 +85,9 @@ document.getElementById('close')!.addEventListener('click', () => window.close()
 type ReplyError = { message: string; link?: string; retry?: boolean };
 
 type ChatSummary = { id: string; title: string; updatedAt: number };
-type Message = { role: 'user' | 'claude'; text: string; at: number };
+type SavedTool = { name: string; input?: unknown; at: number; isError: boolean };
+type Message = { role: 'user' | 'claude'; text: string; at: number; tools?: SavedTool[] };
+type ToolEvent = { tool: { id: string; name: string; input: unknown } } | { toolDone: { id: string; isError: boolean } };
 
 // Provided by the preload script.
 declare const pet: {
@@ -102,6 +105,7 @@ declare const pet: {
   copyText(text: string): void;
   onReplyStart(cb: () => void): void;
   onReplyChunk(cb: (text: string) => void): void;
+  onReplyTool(cb: (event: ToolEvent) => void): void;
   onReplyEnd(cb: () => void): void;
   onReplyError(cb: (error: ReplyError) => void): void;
   isCompact(): Promise<boolean>;
@@ -131,42 +135,78 @@ messages.addEventListener('click', (e) => {
 
 // The reply bubble grows as chunks arrive.
 let reply: HTMLElement | null = null;
-const rawText = new WeakMap<HTMLElement, string>(); // the Markdown source of each reply bubble
+const rawText = new WeakMap<HTMLElement, string>(); // the Markdown source of each reply bubble, for Copy reply
+const partText = new WeakMap<HTMLElement, string>(); // the Markdown source of each text part
+const toolOf = new WeakMap<HTMLElement, { name: string; input?: unknown }>(); // what each tool line shows
+const toolLines = new Map<string, HTMLElement>(); // the running reply's tool lines, by tool id
 let pending = ''; // chunks wait here so the DOM is written once per frame
 let frame = 0;
+// Decide before growing: follow the reply only if the reader is at the bottom.
+function growing(change: () => void): void {
+  const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
+  change();
+  if (stick) messages.scrollTop = messages.scrollHeight;
+}
 function flush(): void {
   cancelAnimationFrame(frame);
   frame = 0;
   if (!pending) return;
-  // Decide before growing: follow the reply only if the reader is at the bottom.
-  const stick = shouldStick(messages.scrollTop, messages.clientHeight, messages.scrollHeight);
-  reply ||= addReply(); // created on the first word, so no empty bubble while waiting
-  // shortcut: re-parses the whole reply each frame, quadratic for very long replies; stream-parse if that shows up
-  renderReply(reply, (rawText.get(reply) ?? '') + pending);
+  growing(() => {
+    reply ||= addReply(); // created on the first word or tool, so no empty bubble while waiting
+    appendText(reply, pending);
+  });
   pending = '';
-  if (stick) messages.scrollTop = messages.scrollHeight;
 }
-// A reply bubble: the body is re-rendered as text streams in; the Copy reply button stays.
+// A reply bubble: text parts and tool lines in the order they came, then the Copy reply button.
 function addReply(at?: number): HTMLElement {
   const el = addMessage('', 'claude', false, at);
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'copy-reply';
   button.textContent = 'Copy reply';
-  el.append(document.createElement('div'), button);
+  el.append(button);
+  rawText.set(el, '');
   return el;
 }
-function renderReply(el: HTMLElement, raw: string): void {
-  rawText.set(el, raw);
-  const body = el.firstElementChild as HTMLElement;
-  body.innerHTML = renderMarkdown(raw, purify);
-  addCopyButtons(body);
+// Text after a tool line starts a new part, so the line stays where the tool ran.
+function appendText(el: HTMLElement, text: string): void {
+  rawText.set(el, (rawText.get(el) ?? '') + text);
+  const button = el.lastElementChild!;
+  let part = button.previousElementSibling as HTMLElement | null;
+  if (!part?.classList.contains('part')) {
+    part = document.createElement('div');
+    part.className = 'part';
+    el.insertBefore(part, button);
+  }
+  const raw = (partText.get(part) ?? '') + text;
+  partText.set(part, raw);
+  // shortcut: re-parses the whole part each frame, quadratic for very long replies; stream-parse if that shows up
+  part.innerHTML = renderMarkdown(raw, purify);
+  addCopyButtons(part);
+}
+function addToolLine(el: HTMLElement): HTMLElement {
+  const line = document.createElement('div');
+  el.insertBefore(line, el.lastElementChild);
+  return line;
+}
+// The label holds Claude's tool input: textContent only, never HTML.
+function showTool(line: HTMLElement, status: 'running' | 'done' | 'failed', tool: { name: string; input?: unknown } = toolOf.get(line)!): void {
+  const label = toolLabel(tool.name, tool.input);
+  toolOf.set(line, tool);
+  line.className = `tool ${status}`;
+  line.textContent = status === 'running' ? label.running : status === 'done' ? `✓ ${label.done}` : `✕ ${label.failed}`;
+}
+// Tools still running when the reply ends were cut off (Stop, an error).
+function endTools(): void {
+  for (const line of toolLines.values()) if (line.classList.contains('running')) showTool(line, 'failed');
+  toolLines.clear();
 }
 function dropReply(): void {
   cancelAnimationFrame(frame);
   frame = 0;
   pending = '';
   reply = null;
+  toolLines.clear();
 }
 pet.onReplyStart(() => setState('thinking'));
 pet.onReplyChunk((text) => {
@@ -174,13 +214,32 @@ pet.onReplyChunk((text) => {
   if (state === 'thinking') armSlow();
   frame ||= requestAnimationFrame(flush);
 });
+// A start shows the line at once; the same id again fills in its label, and a done event finishes it.
+pet.onReplyTool((ev) => {
+  flush(); // the text so far goes above the line
+  if (state === 'thinking') armSlow();
+  growing(() => {
+    if ('tool' in ev) {
+      const { id, name, input } = ev.tool;
+      reply ||= addReply();
+      const line = toolLines.get(id) ?? addToolLine(reply);
+      toolLines.set(id, line);
+      if (!line.className || line.classList.contains('running')) showTool(line, 'running', { name, input });
+    } else {
+      const line = toolLines.get(ev.toolDone.id);
+      if (line) showTool(line, ev.toolDone.isError ? 'failed' : 'done');
+    }
+  });
+});
 pet.onReplyEnd(() => {
   flush();
+  endTools();
   reply = null;
   setState('idle');
 });
 pet.onReplyError((error) => {
   flush();
+  endTools();
   reply = null;
   const el = addMessage(error.message, 'claude');
   if (error.link) {
@@ -296,6 +355,18 @@ chatsPanel.addEventListener('keydown', (e) => {
   if (compact) setMode(listFrom);
 });
 
+// A saved reply: its text cut at each tool's offset, so the lines come back where they ran.
+function showReply(m: Message): void {
+  const el = addReply(m.at);
+  let pos = 0;
+  for (const t of m.tools ?? []) {
+    const at = Math.max(pos, Math.min(t.at, m.text.length));
+    if (at > pos) appendText(el, m.text.slice(pos, at));
+    pos = at;
+    showTool(addToolLine(el), t.isError ? 'failed' : 'done', t);
+  }
+  if (pos < m.text.length) appendText(el, m.text.slice(pos));
+}
 function resetChat(id: string, history: Message[] = []): void {
   chatId = id;
   dropReply(); // a reply cut off by New chat must not write into the new chat
@@ -304,7 +375,7 @@ function resetChat(id: string, history: Message[] = []): void {
   messages.replaceChildren();
   for (const m of history) {
     if (m.role === 'user') addMessage(m.text, 'user', false, m.at);
-    else renderReply(addReply(m.at), m.text);
+    else showReply(m);
   }
   if (!history.length && !compact) addMessage("Hi, I'm ClaudePet.", 'claude'); // the compact box would only grow for it
   messages.scrollTop = messages.scrollHeight;

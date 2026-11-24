@@ -2,7 +2,7 @@ import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_proces
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import type { Bridge } from './bridge';
+import type { Bridge, ToolDone, ToolEvent, ToolUse } from './bridge';
 import { isSessionId, type Mode } from './chats';
 import { BridgeError, deniedMessage, describe, toBridgeError, type ErrorCase } from './errors';
 import type { ToolSettings } from './settings';
@@ -36,16 +36,6 @@ export function readVersion(exe: string): Promise<string | undefined> {
       resolve(err ? undefined : stdout.trim() || undefined),
     );
   });
-}
-
-export interface ToolUse {
-  id: string;
-  name: string;
-  input: unknown; // {} at the start; the full input comes with the assistant message
-}
-export interface ToolDone {
-  id: string;
-  isError: boolean;
 }
 
 export interface BridgeEvent {
@@ -204,7 +194,7 @@ const OFFLINE_RETRIES = 3;
 export class ClaudeBridge implements Bridge {
   constructor(private opts: ClaudeBridgeOptions) {}
 
-  async *send(chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string> {
+  async *send(chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string | ToolEvent> {
     signal.throwIfAborted();
     const exe = this.opts.exe();
     if (!exe) throw new BridgeError(describe('not-installed', 'Claude Code is not installed.'));
@@ -252,6 +242,8 @@ export class ClaudeBridge implements Bridge {
         if (ev?.error) error = ev.error;
         if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
+        for (const tool of ev?.tools ?? []) yield { tool };
+        for (const toolDone of ev?.done ?? []) yield { toolDone };
         if (ev?.chunk) yield ev.chunk;
       }
       const code = await exit;

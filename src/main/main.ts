@@ -1,6 +1,6 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, screen, shell } from 'electron';
 import path from 'node:path';
-import { deleteMessages, isChatId, loadChats, appendMessage, loadMessages, matches, readMessages, recent, rename, saveChats, setSession, transcriptPath, upsert, type Chat } from './chats';
+import { deleteMessages, isChatId, loadChats, appendMessage, loadMessages, matches, readMessages, recent, rename, saveChats, setSession, transcriptPath, upsert, type Chat, type SavedTool } from './chats';
 import fs from 'node:fs';
 import os from 'node:os';
 import { FakeBridge, type Bridge } from './bridge';
@@ -213,7 +213,9 @@ function logError(e: BridgeError): void {
   }
 }
 
-// Streams one reply to the renderer as reply:start, reply:chunk..., then reply:end or reply:error.
+const MAX_TOOL_INPUT = 2000; // a saved tool keeps its input only up to this much JSON
+
+// Streams one reply to the renderer as reply:start, reply:chunk... and reply:tool..., then reply:end or reply:error.
 async function runReply(id: string, text: string): Promise<void> {
   const ac = new AbortController();
   inflight = ac;
@@ -223,10 +225,25 @@ async function runReply(id: string, text: string): Promise<void> {
   send('reply:start');
   mood.event('send');
   let reply = '';
+  const tools = new Map<string, SavedTool>(); // by tool id, in the order they started
   try {
-    for await (const chunk of bridge.send(id, text, ac.signal)) {
-      reply += chunk;
-      send('reply:chunk', chunk);
+    for await (const ev of bridge.send(id, text, ac.signal)) {
+      if (typeof ev === 'string') {
+        reply += ev;
+        send('reply:chunk', ev);
+        continue;
+      }
+      send('reply:tool', ev);
+      if ('tool' in ev) {
+        const { name, input } = ev.tool;
+        const json = JSON.stringify(input) ?? '';
+        // A tool that never finishes (Stop, an error) is saved as failed.
+        const t = tools.get(ev.tool.id) ?? { name, at: reply.length, isError: true };
+        tools.set(ev.tool.id, { ...t, name, input: json.length > MAX_TOOL_INPUT ? undefined : input });
+      } else {
+        const t = tools.get(ev.toolDone.id);
+        if (t) t.isError = ev.toolDone.isError;
+      }
     }
     send('reply:end');
     mood.event('end');
@@ -243,7 +260,8 @@ async function runReply(id: string, text: string): Promise<void> {
     }
   } finally {
     // Keep what streamed, even when Stop or an error cut it short; a chat deleted meanwhile stays deleted.
-    if (reply && chats.some((c) => c.id === id)) appendMessage(id, { role: 'claude', text: reply, at: Date.now() });
+    if ((reply || tools.size) && chats.some((c) => c.id === id))
+      appendMessage(id, { role: 'claude', text: reply, at: Date.now(), ...(tools.size ? { tools: [...tools.values()] } : {}) });
     inflight = null;
     refreshTray();
   }

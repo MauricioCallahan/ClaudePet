@@ -57,6 +57,21 @@ test('parseMessages keeps valid messages and falls back to [] for a corrupt file
   assert.deepEqual(parseMessages(text), [ok]);
   for (const bad of ['', '{"a":', 'null', '{}']) assert.deepEqual(parseMessages(bad), []);
 });
+test('parseMessages keeps valid saved tools and drops bad ones, never the message', () => {
+  const tool = { name: 'WebSearch', input: { query: 'x' }, at: 3, isError: false };
+  const text = JSON.stringify([
+    { role: 'claude', text: 'abc def', at: 1, tools: [tool, { name: 5, at: 0, isError: false }, { name: 'X', at: -1, isError: false }, { name: 'X', at: 1.5, isError: false }, { name: 'X', at: 0 }, null] },
+    { role: 'claude', text: 'b', at: 2, tools: 'nope' },
+    { role: 'claude', text: 'c', at: 3, tools: [null] },
+    { role: 'claude', text: 'old file', at: 4 },
+  ]);
+  assert.deepEqual(parseMessages(text), [
+    { role: 'claude', text: 'abc def', at: 1, tools: [tool] },
+    { role: 'claude', text: 'b', at: 2 },
+    { role: 'claude', text: 'c', at: 3 },
+    { role: 'claude', text: 'old file', at: 4 },
+  ]);
+});
 test('isChatId accepts uuids and refuses anything that could leave the chats folder', () => {
   assert.ok(isChatId(crypto.randomUUID()));
   for (const bad of ['', '../x', 'a/b', 'a\\b', 'x.json', 'x'.repeat(101), 5, null]) assert.equal(isChatId(bad), false, String(bad));

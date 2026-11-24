@@ -4,8 +4,8 @@ import { FakeBridge } from './bridge';
 
 const fast = () => new FakeBridge({ waitMs: () => 0, wordMs: 0 });
 
-async function collect(it: AsyncIterable<string>): Promise<string[]> {
-  const out: string[] = [];
+async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+  const out: T[] = [];
   for await (const c of it) out.push(c);
   return out;
 }
@@ -31,7 +31,7 @@ test('FakeBridge replies with Markdown for /md', async () => {
 test('FakeBridge stops when aborted mid-stream', async () => {
   const ac = new AbortController();
   const bridge = new FakeBridge({ waitMs: () => 0, wordMs: 1000 });
-  const seen: string[] = [];
+  const seen: unknown[] = [];
   await assert.rejects(async () => {
     for await (const c of bridge.send('c', 'one two three', ac.signal)) {
       seen.push(c);
@@ -44,4 +44,13 @@ test('FakeBridge rejects right away when already aborted', async () => {
   const ac = new AbortController();
   ac.abort();
   await assert.rejects(collect(fast().send('c', 'hi', ac.signal)), { name: 'AbortError' });
+});
+test('FakeBridge runs a pretend web search for /tool, then echoes', async () => {
+  const out = await collect(fast().send('c', '/tool cats', new AbortController().signal));
+  assert.deepEqual(out.slice(0, 3), [
+    { tool: { id: 'fake-tool', name: 'WebSearch', input: {} } },
+    { tool: { id: 'fake-tool', name: 'WebSearch', input: { query: 'cats' } } },
+    { toolDone: { id: 'fake-tool', isError: false } },
+  ]);
+  assert.equal(out.slice(3).join(''), '/tool cats');
 });

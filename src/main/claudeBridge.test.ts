@@ -47,6 +47,10 @@ test('buildArgs passes the pet prompt file in chat mode only', () => {
   assert.deepEqual(buildArgs({ promptFile: file }).slice(-2), ['--system-prompt-file', file]);
   assert.ok(!buildArgs({ mode: 'code', promptFile: file }).includes('--system-prompt-file'));
 });
+test('the pet prompt stays true whichever tools are turned on', () => {
+  assert.ok(PET_PROMPT.includes("Use a tool only when it clearly helps; if you need one that isn't available, say so plainly."));
+  assert.ok(!PET_PROMPT.includes('no tools'));
+});
 test('systemPrompt adds the custom instructions after the pet prompt, and skips a blank file', () => {
   assert.equal(systemPrompt(), PET_PROMPT);
   assert.equal(systemPrompt('  \n '), PET_PROMPT);

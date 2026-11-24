@@ -10,6 +10,7 @@ At the beginning of each new session, include the phrase "Project context verifi
 - Each milestone in ROADMAP.md has main bullets. Break every bullet into 5 tasks.
 - Number tasks as M<milestone>-<bullet>.<task> (e.g. M1-3.2 = milestone 1, bullet 3, task 2).
 - Task lists live in docs/milestone-<N>.md (ROADMAP.md has the overview). Tick tasks off as they land.
+- When asked to plan a GitHub issue, write the plan to docs/issues/issue-<number>-<short-name>.md (e.g. `issue-24-concise-deny.md`). The folder holds only plans for planned issues.
 
 ### Branching
 - `production` is the default branch: released milestones only. `development` collects finished bullets.

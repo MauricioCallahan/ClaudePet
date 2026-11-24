@@ -61,6 +61,9 @@ test('approval rules keep plain tool names with allow, ask or deny', () => {
   assert.deepEqual(approvalRules({ tools: { approval: rules } }), rules);
   assert.deepEqual(approvalRules({}), {});
 });
+test('approval rules keep a hyphen inside a name (mcp__my-server) but not at the start', () => {
+  assert.deepEqual(approvalRules({ tools: { approval: { 'mcp__my-server': 'allow', '-x': 'allow' } } }), { 'mcp__my-server': 'allow' });
+});
 test('approval rules drop unsafe names and unknown values, and a bad approval setting gives none', () => {
   const bad = { 'Web Fetch': 'allow', 'x & calc': 'allow', '--dangerously-skip-permissions': 'allow', '': 'allow', WebSearch: 'yes', Bash: true, WebFetch: 'ask' };
   assert.deepEqual(approvalRules({ tools: { approval: bad } }), { WebFetch: 'ask' });

@@ -47,11 +47,12 @@ export type Rules = Record<string, Rule>;
 const RULES: readonly unknown[] = ['allow', 'ask', 'deny'];
 
 // tools.approval: { "<tool or mcp__server>": "allow" | "ask" | "deny" }. A name can become an --allowedTools argument
-// through a shell, so only plain tool names are kept; anything else in the file is dropped, never passed on.
+// through a shell, so only plain tool names are kept (letters, digits, "_" and "-", never starting with "-", so a flag is
+// impossible); anything else in the file is dropped, never passed on.
 export function approvalRules(s: Settings): Rules {
   const t = s.tools && typeof s.tools === 'object' ? (s.tools as { approval?: unknown }).approval : undefined;
   if (!t || typeof t !== 'object' || Array.isArray(t)) return {};
-  return Object.fromEntries(Object.entries(t).filter(([name, rule]) => /^[A-Za-z0-9_]{1,128}$/.test(name) && RULES.includes(rule))) as Rules;
+  return Object.fromEntries(Object.entries(t).filter(([name, rule]) => /^[A-Za-z0-9][\w-]{0,127}$/.test(name) && RULES.includes(rule))) as Rules;
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

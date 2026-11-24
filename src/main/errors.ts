@@ -19,6 +19,13 @@ export function classify(text: string, code?: number | null): ErrorCase {
   return PATTERNS.find(([, re]) => re.test(text))?.[0] ?? 'unknown';
 }
 
+// A tool Claude Code was not allowed to use: a web tool names the setting that turns it on.
+export function deniedMessage(tool: string): string {
+  if (tool === 'WebSearch') return 'Web search is off. Turn it on in Tools and connectors.';
+  if (tool === 'WebFetch') return 'Web fetch is off. Turn it on in Tools and connectors.';
+  return `Claude Code asked to use ${tool}, but tools are off in pet chats.`;
+}
+
 // What the renderer shows. retry adds a Retry button; link is opened in the browser.
 export interface ReplyError {
   case: ErrorCase;

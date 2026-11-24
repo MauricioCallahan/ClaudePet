@@ -55,6 +55,12 @@ test('a denied permission ends the reply with a clear error instead of hanging',
   await expect(page.locator('#messages')).toContainText('Claude Code asked to use Bash, but tools are off in pet chats.');
 });
 
+test('a denied web tool says which setting turns it on', async () => {
+  await send('/deny WebFetch');
+  await idle();
+  await expect(lastReply()).toContainText('Web fetch is off. Turn it on in Tools and connectors.');
+});
+
 test('the model comes from settings, defaults to sonnet, and a change applies to the next message', async () => {
   const model = (args: string[]) => args[args.indexOf('--model') + 1];
   expect(model((await started()).args)).toBe('sonnet');

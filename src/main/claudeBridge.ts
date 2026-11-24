@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge } from './bridge';
 import { isSessionId, type Mode } from './chats';
-import { BridgeError, describe, toBridgeError, type ErrorCase } from './errors';
+import { BridgeError, deniedMessage, describe, toBridgeError, type ErrorCase } from './errors';
 import type { ToolSettings } from './settings';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
@@ -72,8 +72,7 @@ export function parseLine(line: string): BridgeEvent | null {
     // Reported as a success, but a denied tool means the reply is not what was asked for.
     const denied = Array.isArray(v.permission_denials) ? v.permission_denials[0] : undefined;
     if (denied) {
-      const tool = typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool';
-      return { error: `Claude Code asked to use ${tool}, but tools are off in pet chats.` };
+      return { error: deniedMessage(typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool') };
     }
     if (!v.is_error) return sessionId ? { sessionId } : null;
     return { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' };

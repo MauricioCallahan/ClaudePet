@@ -24,8 +24,9 @@ process.stdin.on('end', () => {
     return;
   }
   if (prompt.startsWith('/deny')) {
-    say('I need to run a command.');
-    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: 'Bash' }] });
+    const tool = prompt.split(/\s+/)[1] || 'Bash'; // "/deny WebFetch" denies that tool
+    say('I need to use a tool.');
+    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: tool }] });
     return;
   }
   // Error output in the shapes claude 2.1.321 prints; a real error run exits with 1.

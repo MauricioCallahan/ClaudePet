@@ -1,13 +1,14 @@
 // What the pet shows about Claude. Electron-free, so node --test can load it.
 
-export type PetState = 'idle' | 'thinking' | 'working' | 'replied' | 'error';
+export type PetState = 'idle' | 'thinking' | 'working' | 'waiting' | 'replied' | 'error';
 // stop covers Stop, New chat and reopening a chat: all go straight back to idle.
 // tool: a tool started; text: reply text streams again, or the last running tool finished.
-export type PetEvent = 'send' | 'tool' | 'text' | 'end' | 'error' | 'stop' | 'settle';
+// ask: an approval card opened; answer: the last card was answered, so the tool runs (or Claude hears the deny).
+export type PetEvent = 'send' | 'tool' | 'text' | 'ask' | 'answer' | 'end' | 'error' | 'stop' | 'settle';
 
 // The same rows for every pet, since the Codex format fixes the row order (see ROWS in petFormat.ts).
 // A sheet has its rows from the top, so one without row 1 (working) has only idle, which playableRow falls back to.
-export const STATE_ROW: Record<PetState, number> = { idle: 0, thinking: 7, working: 1, replied: 3, error: 5 };
+export const STATE_ROW: Record<PetState, number> = { idle: 0, thinking: 7, working: 1, waiting: 6, replied: 3, error: 5 };
 
 export function nextState(s: PetState, e: PetEvent): PetState {
   switch (e) {
@@ -16,9 +17,13 @@ export function nextState(s: PetState, e: PetEvent): PetState {
     case 'tool':
       return s === 'thinking' || s === 'working' ? 'working' : s;
     case 'text':
-      return s === 'working' ? 'thinking' : s;
+      return s === 'working' ? 'thinking' : s; // not from waiting: text can't stream while Claude waits on a card
+    case 'ask':
+      return s === 'thinking' || s === 'working' ? 'waiting' : s;
+    case 'answer':
+      return s === 'waiting' ? 'working' : s;
     case 'end':
-      return s === 'thinking' || s === 'working' ? 'replied' : s;
+      return s === 'thinking' || s === 'working' || s === 'waiting' ? 'replied' : s;
     case 'error':
       return 'error'; // also from idle: a message rejected before it was sent
     case 'stop':

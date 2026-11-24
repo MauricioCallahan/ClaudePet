@@ -42,13 +42,30 @@ const table: [PetState, PetEvent, PetState][] = [
   ['replied', 'text', 'replied'],
   ['error', 'tool', 'error'],
   ['error', 'text', 'error'],
+  ['thinking', 'ask', 'waiting'],
+  ['working', 'ask', 'waiting'],
+  ['waiting', 'ask', 'waiting'],
+  ['waiting', 'answer', 'working'],
+  ['waiting', 'text', 'waiting'],
+  ['waiting', 'tool', 'waiting'], // a card is still open
+  ['waiting', 'end', 'replied'],
+  ['waiting', 'error', 'error'],
+  ['waiting', 'stop', 'idle'],
+  ['waiting', 'settle', 'waiting'],
+  ['waiting', 'send', 'thinking'],
+  ['thinking', 'answer', 'thinking'],
+  ['working', 'answer', 'working'],
+  ['idle', 'ask', 'idle'],
+  ['idle', 'answer', 'idle'],
+  ['replied', 'ask', 'replied'],
+  ['error', 'answer', 'error'],
 ];
 for (const [from, e, to] of table) test(`${from} + ${e} → ${to}`, () => assert.equal(nextState(from, e), to));
 
 test('each state plays its Codex row', () => {
   assert.deepEqual(
     Object.fromEntries(Object.entries(STATE_ROW).map(([s, r]) => [s, ROWS[r].state])),
-    { idle: 'idle', thinking: 'running', working: 'running-right', replied: 'waving', error: 'failed' },
+    { idle: 'idle', thinking: 'running', working: 'running-right', waiting: 'waiting', replied: 'waving', error: 'failed' },
   );
 });
 

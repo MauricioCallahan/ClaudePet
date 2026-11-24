@@ -81,7 +81,7 @@ Rows, top to bottom, with Codex's frame counts and per-frame timings:
 | 3 | waving | 4 | 140 each, last 280 | once | replied |
 | 4 | jumping | 5 | 140 each, last 280 | once | |
 | 5 | failed | 8 | 140 each, last 240 | once | error |
-| 6 | waiting | 6 | 150 each, last 260 | loop | |
+| 6 | waiting | 6 | 150 each, last 260 | loop | waiting (Claude asks you to allow a tool) |
 | 7 | running | 6 | 120 each, last 220 | loop | thinking |
 | 8 | review | 6 | 150 each, last 280 | loop | |
 | 9 | look directions, 0-157.5° | 8 | still poses | | |

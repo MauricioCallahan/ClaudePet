@@ -293,3 +293,38 @@ test('a turn that ends with Retry offered is taken out of the session, so Retry 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The fake claude's "/approve" asks through the approval server from mcp-run.json, like claude does.
+test('a tool the user denied reaches Claude and the reply ends normally; with no approval tool it is an error', async () => {
+  const { ApprovalPipe, Approvals } = await import('./approvals');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-approve-'));
+  const pipe = new ApprovalPipe();
+  await pipe.listen();
+  const approvals = new Approvals(pipe, { command: process.execPath, args: [path.resolve('dist/approval/server.js')] }, (card) => card && approvals.answer(card.id, 'deny'), { rules: () => ({ WebFetch: 'ask' }) });
+  const bridge = (withApprovals: boolean) =>
+    new ClaudeBridge({
+      exe: () => path.resolve('e2e/fixtures/fake-claude.cmd'),
+      cwd: path.join(dir, 'workspace'),
+      sessions: { get: () => undefined, set: () => {} },
+      mode: () => 'chat',
+      model: () => undefined,
+      tools: () => ({ webSearch: true, webFetch: true }),
+      rules: () => ({ WebFetch: 'ask' }),
+      ...(withApprovals ? { approvals, runConfigFile: path.join(dir, 'mcp-run.json') } : {}),
+      instructions: () => undefined,
+      promptFile: path.join(dir, 'prompt.md'),
+      idleMs: 30_000,
+    });
+  const run = async (b: ClaudeBridge) => {
+    let text = '';
+    for await (const ev of b.send('c', '/approve WebFetch', new AbortController().signal)) if (typeof ev === 'string') text += ev;
+    return text;
+  };
+  try {
+    assert.equal(await run(bridge(true)), 'WebFetch: denied (The user denied this tool call.)');
+    await assert.rejects(run(bridge(false)), /Web fetch is off/);
+  } finally {
+    pipe.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

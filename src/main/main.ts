@@ -171,11 +171,17 @@ const transcriptOf = (sessionId: string) => transcriptPath(process.env.CLAUDE_CO
 // Claude Code starts the approval server as this same executable in Node mode (no separate Node needed).
 const approvalPipe = new ApprovalPipe();
 let shownCard: string | undefined; // the card on screen, so a repeat of it does not balloon again
-const approvals = new Approvals(approvalPipe, { command: process.execPath, args: [path.join(__dirname, '../approval/server.js')] }, (card) => {
-  win?.webContents.send('approval:show', card ?? null);
-  if (card && card.id !== shownCard && !win?.isVisible()) notify('Claude is waiting', 'Claude wants to use a tool. Open ClaudePet to allow or deny it.');
-  shownCard = card?.id;
-});
+const approvals = new Approvals(
+  approvalPipe,
+  { command: process.execPath, args: [path.join(__dirname, '../approval/server.js')] },
+  (card) => {
+    win?.webContents.send('approval:show', card ?? null);
+    if (card && card.id !== shownCard && !win?.isVisible()) notify('Claude is waiting', 'Claude wants to use a tool. Open ClaudePet to allow or deny it.');
+    mood.event(card ? 'ask' : 'answer');
+    shownCard = card?.id;
+  },
+  { rules: () => approvalRules(loadSettings()) },
+);
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -396,6 +402,7 @@ async function deleteChat(id: string): Promise<void> {
       console.error(`Could not delete the ${what} of chat ${id}:`, err);
     }
   };
+  approvals.forget(id);
   remove('messages', () => deleteMessages(id));
   const transcript = chat.sessionId && transcriptOf(chat.sessionId);
   if (transcript) {

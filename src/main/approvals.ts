@@ -47,29 +47,36 @@ export interface Card {
 
 export const DENIED = 'The user denied this tool call.';
 export const STOPPED = 'The reply was stopped before the user answered.';
+export const TIMED_OUT = 'The user did not answer within 5 minutes, so the tool was not run.';
+export const RULE_DENIED = 'A rule in ClaudePet settings denies this tool.';
+export const ANSWER_MS = 5 * 60_000; // below MCP_TOOL_TIMEOUT_MS, so ClaudePet always answers first
 
 interface Pending {
   card: string;
+  chatId: string;
   token: string;
   req: ApprovalRequest;
   resolve: (v: Verdict) => void;
 }
 
+// A rule decides first (allow / deny with no card), then "Allow for this chat", then the card.
 // Claude can ask for two tools at once: requests queue, and the card shows the first until it is answered.
 export class Approvals implements ApprovalHost {
   private queue: Pending[] = [];
   private answeredInBatch = 0; // requests answered since the queue was last empty, for "2 of 2"
+  private allowedInChat = new Map<string, Set<string>>(); // "Allow for this chat": memory only, never saved
 
   constructor(
     private pipe: ApprovalPipe,
     readonly server: { command: string; args: string[] },
     private show: (card: Card | undefined) => void, // undefined: no card
+    private o: { rules?: () => Rules; answerMs?: number } = {},
   ) {}
 
-  begin(_chatId: string): ApprovalSession {
+  begin(chatId: string): ApprovalSession {
     const answered = new Set<string>();
     const token = this.pipe.open(async (req) => {
-      const v = await new Promise<Verdict>((resolve) => this.enqueue({ card: crypto.randomUUID(), token, req, resolve }));
+      const v = await this.decide(chatId, token, req);
       if (req.toolUseId) answered.add(req.toolUseId);
       return v;
     });
@@ -85,11 +92,34 @@ export class Approvals implements ApprovalHost {
   }
 
   // From the card. Only the card on screen can be answered; a stale or made-up id does nothing.
+  // "Allow for this chat" also lets every waiting call of the same tool in that chat through.
   answer(card: unknown, a: unknown): boolean {
     const head = this.queue[0];
     if (!head || card !== head.card || (a !== 'once' && a !== 'chat' && a !== 'deny')) return false;
-    this.settle((p) => p === head, a === 'deny' ? { allow: false, message: DENIED } : { allow: true });
+    if (a === 'chat') {
+      const tools = this.allowedInChat.get(head.chatId) ?? new Set<string>();
+      this.allowedInChat.set(head.chatId, tools.add(head.req.toolName));
+      this.settle((p) => p.chatId === head.chatId && p.req.toolName === head.req.toolName, { allow: true });
+    } else this.settle((p) => p === head, a === 'deny' ? { allow: false, message: DENIED } : { allow: true });
     return true;
+  }
+
+  // The chat was deleted: its "Allow for this chat" goes with it.
+  forget(chatId: string): void {
+    this.allowedInChat.delete(chatId);
+  }
+
+  private decide(chatId: string, token: string, req: ApprovalRequest): Promise<Verdict> {
+    const rule = ruleFor(req.toolName, this.o.rules?.() ?? {});
+    if (rule === 'allow' || this.allowedInChat.get(chatId)?.has(req.toolName)) return Promise.resolve({ allow: true });
+    if (rule === 'deny') return Promise.resolve({ allow: false, message: RULE_DENIED });
+    return new Promise<Verdict>((resolve) => {
+      const p: Pending = { card: crypto.randomUUID(), chatId, token, req, resolve };
+      // No answer in time: deny, so the hidden process never waits for ever.
+      const timer = setTimeout(() => this.settle((q) => q === p, { allow: false, message: TIMED_OUT }), this.o.answerMs ?? ANSWER_MS);
+      p.resolve = (v) => (clearTimeout(timer), resolve(v));
+      this.enqueue(p);
+    });
   }
 
   private enqueue(p: Pending): void {
@@ -122,7 +152,12 @@ export class ApprovalPipe {
   readonly name =
     process.platform === 'win32' ? `\\\\.\\pipe\\claudepet-${crypto.randomBytes(8).toString('hex')}` : path.join(os.tmpdir(), `claudepet-${crypto.randomBytes(8).toString('hex')}.sock`);
   private handlers = new Map<string, Handler>();
-  private server = net.createServer((socket) => this.serve(socket));
+  private sockets = new Set<net.Socket>();
+  private server = net.createServer((socket) => {
+    this.sockets.add(socket);
+    socket.once('close', () => this.sockets.delete(socket));
+    this.serve(socket);
+  });
 
   listen(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -142,8 +177,10 @@ export class ApprovalPipe {
     this.handlers.delete(token);
   }
 
+  // Quit: open requests are cut off (the approval server answers deny), so nothing keeps the app alive.
   dispose(): void {
     this.handlers.clear();
+    for (const s of this.sockets) s.destroy();
     this.server.close();
   }
 

@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('pet', {
   onReplyChunk: (cb: (text: string) => void): void => {
     ipcRenderer.on('reply:chunk', (_e, text: string) => cb(text));
   },
+  onReplyTool: (cb: (event: unknown) => void): void => {
+    ipcRenderer.on('reply:tool', (_e, event: unknown) => cb(event));
+  },
   onReplyEnd: (cb: () => void): void => {
     ipcRenderer.on('reply:end', () => cb());
   },

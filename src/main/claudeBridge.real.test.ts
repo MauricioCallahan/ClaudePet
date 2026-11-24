@@ -30,13 +30,14 @@ test('real Claude Code: a failed turn is taken out of the transcript and the ses
     },
     mode: () => 'chat',
     model: () => 'haiku',
+    tools: () => ({ webSearch: false, webFetch: false }),
     instructions: () => undefined,
     promptFile: path.join(dir, 'prompt.md'),
     idleMs: 120_000,
   });
   const run = async (text: string) => {
     let reply = '';
-    for await (const chunk of bridge.send('real', text, new AbortController().signal)) reply += chunk;
+    for await (const chunk of bridge.send('real', text, new AbortController().signal)) if (typeof chunk === 'string') reply += chunk;
     return reply;
   };
   const file = () => transcriptPath(configDir, cwd, session!)!;

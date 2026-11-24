@@ -23,9 +23,27 @@ process.stdin.on('end', () => {
     out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id });
     return;
   }
+  // A web search in the shapes claude 2.1.331 prints, slow enough to see each pet state. "/tool fail" fails it.
+  if (prompt.startsWith('/tool')) {
+    const id = 'toolu_fake';
+    const input = { query: 'weather in Austin', mode: 'standard' };
+    const wait = () => new Promise((r) => setTimeout(r, 800));
+    (async () => {
+      await wait(); // thinking
+      out({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id, name: 'WebSearch', input: {} } }, session_id });
+      out({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'WebSearch', input }] }, session_id });
+      await wait(); // the search runs
+      out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'results', ...(prompt.includes('fail') ? { is_error: true } : {}) }] }, session_id });
+      await wait(); // Claude reads the results
+      say('Sunny, 72°F.');
+      out({ type: 'result', subtype: 'success', is_error: false, result: 'Sunny, 72°F.', session_id });
+    })();
+    return;
+  }
   if (prompt.startsWith('/deny')) {
-    say('I need to run a command.');
-    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: 'Bash' }] });
+    const tool = prompt.split(/\s+/)[1] || 'Bash'; // "/deny WebFetch" denies that tool
+    say('I need to use a tool.');
+    out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id, permission_denials: [{ tool_name: tool }] });
     return;
   }
   // Error output in the shapes claude 2.1.321 prints; a real error run exits with 1.

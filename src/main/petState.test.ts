@@ -27,13 +27,28 @@ const table: [PetState, PetEvent, PetState][] = [
   ['error', 'error', 'error'],
   ['error', 'stop', 'idle'],
   ['error', 'settle', 'idle'],
+  ['idle', 'tool', 'idle'],
+  ['idle', 'text', 'idle'],
+  ['thinking', 'tool', 'working'],
+  ['thinking', 'text', 'thinking'],
+  ['working', 'send', 'thinking'],
+  ['working', 'tool', 'working'],
+  ['working', 'text', 'thinking'],
+  ['working', 'end', 'replied'],
+  ['working', 'error', 'error'],
+  ['working', 'stop', 'idle'],
+  ['working', 'settle', 'working'],
+  ['replied', 'tool', 'replied'],
+  ['replied', 'text', 'replied'],
+  ['error', 'tool', 'error'],
+  ['error', 'text', 'error'],
 ];
 for (const [from, e, to] of table) test(`${from} + ${e} → ${to}`, () => assert.equal(nextState(from, e), to));
 
 test('each state plays its Codex row', () => {
   assert.deepEqual(
     Object.fromEntries(Object.entries(STATE_ROW).map(([s, r]) => [s, ROWS[r].state])),
-    { idle: 'idle', thinking: 'running', replied: 'waving', error: 'failed' },
+    { idle: 'idle', thinking: 'running', working: 'running-right', replied: 'waving', error: 'failed' },
   );
 });
 
@@ -52,7 +67,11 @@ async function reply(mood: ReturnType<typeof createMood>, text: string, stop = f
   const ac = new AbortController();
   mood.event('send');
   try {
-    for await (const _ of bridge.send('c', text, ac.signal)) if (stop) ac.abort();
+    for await (const ev of bridge.send('c', text, ac.signal)) {
+      if (stop) ac.abort();
+      // Like runReply: a tool start works, its done (the only tool) or the next text goes back to thinking.
+      mood.event(typeof ev === 'string' || 'toolDone' in ev ? 'text' : 'tool');
+    }
     mood.event('end');
   } catch {
     mood.event(ac.signal.aborted ? 'stop' : 'error');
@@ -97,6 +116,12 @@ test('a reply that ends while the box is hidden waves when the box is shown, the
   assert.deepEqual(played, ['thinking', 'replied', 'replied']); // replayed from its first frame
   await settled();
   assert.deepEqual(played, ['thinking', 'replied', 'replied', 'idle']);
+});
+
+test('a reply with a tool: thinking, working, thinking, replied', async () => {
+  const { played, mood } = recorder();
+  await reply(mood, '/tool cats');
+  assert.deepEqual(played, ['thinking', 'working', 'thinking', 'replied']);
 });
 
 test('a new message cancels a pending settle', async () => {

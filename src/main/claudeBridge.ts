@@ -2,9 +2,10 @@ import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_proces
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import type { Bridge } from './bridge';
+import type { Bridge, ToolDone, ToolEvent, ToolUse } from './bridge';
 import { isSessionId, type Mode } from './chats';
-import { BridgeError, describe, toBridgeError, type ErrorCase } from './errors';
+import { BridgeError, deniedMessage, describe, toBridgeError, type ErrorCase } from './errors';
+import type { ToolSettings } from './settings';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
 export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boolean, home: string): string | undefined {
@@ -39,11 +40,17 @@ export function readVersion(exe: string): Promise<string | undefined> {
 
 export interface BridgeEvent {
   chunk?: string;
+  tools?: ToolUse[]; // one message can start two tools at once
+  done?: ToolDone[];
   sessionId?: string;
   error?: string;
   resetsAt?: number; // the usage limit was hit; unix seconds when it resets
   offline?: number; // Claude Code is retrying a request that got no response at all: its attempt number
 }
+
+const toolUse = (b: any): ToolUse | undefined =>
+  typeof b?.id === 'string' && typeof b.name === 'string' ? { id: b.id, name: b.name, input: b.input ?? {} } : undefined;
+const blocks = (v: any, type: string): any[] => (Array.isArray(v.message?.content) ? v.message.content.filter((b: any) => b?.type === type) : []);
 
 // One line of `claude -p --output-format stream-json`. Anything we do not need, or cannot parse, is null.
 export function parseLine(line: string): BridgeEvent | null {
@@ -60,8 +67,25 @@ export function parseLine(line: string): BridgeEvent | null {
   // attempt restarts for every request, so blips in different requests never add up.
   if (v.type === 'system' && v.subtype === 'api_retry') return v.error_status === null && typeof v.attempt === 'number' ? { offline: v.attempt } : null;
   if (v.type === 'stream_event') {
+    // Shown as soon as Claude starts writing the call; its input is still empty here.
+    if (v.event?.type === 'content_block_start' && v.event.content_block?.type === 'tool_use') {
+      const tool = toolUse(v.event.content_block);
+      return tool ? { tools: [tool] } : null;
+    }
     const d = v.event?.delta;
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
+  }
+  // The whole message again, with each tool's full input. Its text was already streamed, so only tools count.
+  if (v.type === 'assistant') {
+    const tools = blocks(v, 'tool_use').map(toolUse).filter((t): t is ToolUse => !!t);
+    return tools.length ? { tools } : null;
+  }
+  // is_error is left out on success.
+  if (v.type === 'user') {
+    const done = blocks(v, 'tool_result')
+      .filter((b) => typeof b.tool_use_id === 'string')
+      .map((b) => ({ id: b.tool_use_id, isError: b.is_error === true }));
+    return done.length ? { done } : null;
   }
   if (v.type === 'rate_limit_event') {
     const info = v.rate_limit_info;
@@ -71,8 +95,7 @@ export function parseLine(line: string): BridgeEvent | null {
     // Reported as a success, but a denied tool means the reply is not what was asked for.
     const denied = Array.isArray(v.permission_denials) ? v.permission_denials[0] : undefined;
     if (denied) {
-      const tool = typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool';
-      return { error: `Claude Code asked to use ${tool}, but tools are off in pet chats.` };
+      return { error: deniedMessage(typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool') };
     }
     if (!v.is_error) return sessionId ? { sessionId } : null;
     return { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' };
@@ -95,6 +118,7 @@ export interface ClaudeBridgeOptions {
   transcript?: (sessionId: string) => string | undefined; // the session's file in Claude Code, so a failed turn can be taken out
   mode: (chatId: string) => Mode;
   model: () => unknown; // read on every send, so a settings change applies to the next message
+  tools: () => ToolSettings; // read on every send, like model
   instructions: () => string | undefined; // the user's own custom instructions file, if any
   promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
   idleMs: number; // no output for this long ends the reply as a timeout
@@ -105,7 +129,8 @@ export const PET_PROMPT = [
   "You are ClaudePet, a friendly companion in a small chat box on the user's Windows desktop.",
   'Keep replies short and easy to read in a narrow window: a few sentences or a short list, longer only when asked.',
   'Markdown works (lists, code blocks, links); avoid wide tables and large headings.',
-  'You have no tools in this chat: you cannot read files, run commands or browse the web, so say so plainly when asked.',
+  // True whatever is turned on, since a resumed chat keeps the prompt it started with.
+  "Use a tool only when it clearly helps; if you need one that isn't available, say so plainly.",
 ].join(' ');
 
 export function systemPrompt(custom?: string): string {
@@ -113,21 +138,35 @@ export function systemPrompt(custom?: string): string {
   return own ? `${PET_PROMPT}\n\nThe user's own instructions:\n\n${own}` : PET_PROMPT;
 }
 
-// Chat mode: no tools, and none of the user's own settings, hooks, plugins, connectors or skills.
+// Chat mode: only the tools turned on in settings, and none of the user's own settings, hooks, plugins, connectors or skills.
 // Not --bare: it never reads the Pro login.
-const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands'];
+const CHAT_ONLY = ['--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands'];
+
+// The built-in tools a setting can turn on. Only these names ever become arguments.
+const WEB_TOOLS: Record<keyof ToolSettings, string> = { webSearch: 'WebSearch', webFetch: 'WebFetch' };
 
 // The model comes from settings.json and becomes an argument through a shell: an alias or id like opus[1m] only.
 const MODEL = /^[A-Za-z0-9][\w.\-[\]]*$/;
 const DEFAULT_MODEL = 'sonnet';
 
 // promptFile is relative to cwd: an absolute path could hold spaces (a username), which break the shell command line.
-export function buildArgs({ mode = 'chat', sessionId, model, promptFile }: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string } = {}): string[] {
+export function buildArgs({
+  mode = 'chat',
+  sessionId,
+  model,
+  promptFile,
+  tools,
+}: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string; tools?: ToolSettings } = {}): string[] {
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
   // --permission-prompts none: the process is hidden, so anything that would ask for permission is denied, never left waiting.
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompts', 'none'];
   args.push('--model', typeof model === 'string' && MODEL.test(model) ? model : DEFAULT_MODEL);
-  if (mode === 'chat') args.push(...CHAT_ONLY);
+  if (mode === 'chat') {
+    const on = (Object.keys(WEB_TOOLS) as (keyof ToolSettings)[]).filter((k) => tools?.[k] === true).map((k) => WEB_TOOLS[k]).join(',');
+    args.push('--tools', on, ...CHAT_ONLY);
+    // The process is hidden and can't ask, so a tool turned on must also be allowed to run.
+    if (on) args.push('--allowedTools', on);
+  }
   if (mode === 'chat' && promptFile) args.push('--system-prompt-file', promptFile);
   if (isSessionId(sessionId)) args.push('--resume', sessionId);
   return args;
@@ -155,7 +194,7 @@ const OFFLINE_RETRIES = 3;
 export class ClaudeBridge implements Bridge {
   constructor(private opts: ClaudeBridgeOptions) {}
 
-  async *send(chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string> {
+  async *send(chatId: string, text: string, signal: AbortSignal): AsyncGenerator<string | ToolEvent> {
     signal.throwIfAborted();
     const exe = this.opts.exe();
     if (!exe) throw new BridgeError(describe('not-installed', 'Claude Code is not installed.'));
@@ -167,7 +206,7 @@ export class ClaudeBridge implements Bridge {
     const before = this.opts.sessions.get(chatId);
     const kept = before ? readOrNone(this.opts.transcript?.(before)) : undefined;
     const args = shellArgs(
-      buildArgs({ mode, sessionId: before, model: this.opts.model(), promptFile: path.relative(cwd, promptFile) }),
+      buildArgs({ mode, sessionId: before, model: this.opts.model(), tools: this.opts.tools(), promptFile: path.relative(cwd, promptFile) }),
       shell,
     );
     const child = spawn(file, args, { cwd, shell, windowsHide: true });
@@ -203,6 +242,8 @@ export class ClaudeBridge implements Bridge {
         if (ev?.error) error = ev.error;
         if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
+        for (const tool of ev?.tools ?? []) yield { tool };
+        for (const toolDone of ev?.done ?? []) yield { toolDone };
         if (ev?.chunk) yield ev.chunk;
       }
       const code = await exit;

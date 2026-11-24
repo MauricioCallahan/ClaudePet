@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PET_ID, parseSettings, petSettings, uiSettings } from './settings';
+import { DEFAULT_PET_ID, parseSettings, petSettings, toolSettings, uiSettings } from './settings';
 
 test('returns a valid settings object', () => {
   assert.deepEqual(parseSettings('{"x":1,"y":2}'), { x: 1, y: 2 });
@@ -40,4 +40,18 @@ test('ui.compact false keeps the full box', () => {
 test('a bad ui.compact or ui falls back to compact', () => {
   for (const compact of ['false', 0, null]) assert.equal(uiSettings({ ui: { compact } }).compact, true);
   for (const ui of [false, 'x', null]) assert.equal(uiSettings({ ui } as never).compact, true);
+});
+
+test('web tools are on when nothing is set', () => {
+  assert.deepEqual(toolSettings({}), { webSearch: true, webFetch: true });
+});
+test('only a real false turns a web tool off', () => {
+  for (const v of ['false', 0, null, true]) assert.deepEqual(toolSettings({ tools: { webSearch: v, webFetch: v } }), { webSearch: true, webFetch: true });
+  assert.deepEqual(toolSettings({ tools: { websearch: false, WebFetch: false } }), { webSearch: true, webFetch: true });
+});
+test('a tools setting that is not an object leaves the web tools on', () => {
+  for (const tools of [false, 'off', null, []]) assert.deepEqual(toolSettings({ tools }), { webSearch: true, webFetch: true });
+});
+test('webSearch false turns off search only', () => {
+  assert.deepEqual(toolSettings({ tools: { webSearch: false } }), { webSearch: false, webFetch: true });
 });

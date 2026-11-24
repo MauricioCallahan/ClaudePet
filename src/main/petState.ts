@@ -1,18 +1,24 @@
 // What the pet shows about Claude. Electron-free, so node --test can load it.
 
-export type PetState = 'idle' | 'thinking' | 'replied' | 'error';
+export type PetState = 'idle' | 'thinking' | 'working' | 'replied' | 'error';
 // stop covers Stop, New chat and reopening a chat: all go straight back to idle.
-export type PetEvent = 'send' | 'end' | 'error' | 'stop' | 'settle';
+// tool: a tool started; text: reply text streams again, or the last running tool finished.
+export type PetEvent = 'send' | 'tool' | 'text' | 'end' | 'error' | 'stop' | 'settle';
 
 // The same rows for every pet, since the Codex format fixes the row order (see ROWS in petFormat.ts).
-export const STATE_ROW: Record<PetState, number> = { idle: 0, thinking: 7, replied: 3, error: 5 };
+// A sheet has its rows from the top, so one without row 1 (working) has only idle, which playableRow falls back to.
+export const STATE_ROW: Record<PetState, number> = { idle: 0, thinking: 7, working: 1, replied: 3, error: 5 };
 
 export function nextState(s: PetState, e: PetEvent): PetState {
   switch (e) {
     case 'send':
       return 'thinking';
+    case 'tool':
+      return s === 'thinking' || s === 'working' ? 'working' : s;
+    case 'text':
+      return s === 'working' ? 'thinking' : s;
     case 'end':
-      return s === 'thinking' ? 'replied' : s;
+      return s === 'thinking' || s === 'working' ? 'replied' : s;
     case 'error':
       return 'error'; // also from idle: a message rejected before it was sent
     case 'stop':

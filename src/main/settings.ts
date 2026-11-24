@@ -9,7 +9,10 @@ export interface Settings {
   model?: string; // Claude Code model alias or full id, default sonnet (picker UI in v0.2)
   pet?: { enabled?: unknown; id?: unknown }; // read through petSettings; saveSettings merges shallowly, so save the whole object
   ui?: { compact?: unknown }; // read through uiSettings, once at startup
+  tools?: unknown; // read through toolSettings on every send; saveSettings merges shallowly, so save the whole object
 }
+
+export type ToolSettings = { webSearch: boolean; webFetch: boolean };
 
 export const DEFAULT_PET_ID = 'pip'; // the built-in pet in assets/pets/pip
 
@@ -31,6 +34,12 @@ export function petSettings(s: Settings): { enabled: boolean; id: string } {
 export function uiSettings(s: Settings): { compact: boolean } {
   const u = s.ui && typeof s.ui === 'object' ? s.ui : {};
   return { compact: typeof u.compact === 'boolean' ? u.compact : true };
+}
+
+// The read-only web tools are on by default; only a real false turns one off (a typo, "false" or null leaves it on).
+export function toolSettings(s: Settings): ToolSettings {
+  const t: { webSearch?: unknown; webFetch?: unknown } = s.tools && typeof s.tools === 'object' ? s.tools : {};
+  return { webSearch: t.webSearch !== false, webFetch: t.webFetch !== false };
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

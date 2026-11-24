@@ -36,9 +36,8 @@ test.afterAll(async () => {
   fs.rmSync(profile, { recursive: true, force: true });
 });
 
-test('tools and the user setup are off, and the empty values survive the .cmd shim', async () => {
+test('the user setup is off, and the empty values survive the .cmd shim', async () => {
   const { args } = await started();
-  expect(args[args.indexOf('--tools') + 1]).toBe('');
   expect(args[args.indexOf('--setting-sources') + 1]).toBe('');
   expect(args).toEqual(expect.arrayContaining(['--strict-mcp-config', '--disable-slash-commands']));
 });
@@ -53,6 +52,12 @@ test('a denied permission ends the reply with a clear error instead of hanging',
   await send('/deny');
   await idle();
   await expect(page.locator('#messages')).toContainText('Claude Code asked to use Bash, but tools are off in pet chats.');
+});
+
+test('a denied web tool says which setting turns it on', async () => {
+  await send('/deny WebFetch');
+  await idle();
+  await expect(lastReply()).toContainText('Web fetch is off. Turn it on in Tools and connectors.');
 });
 
 test('the model comes from settings, defaults to sonnet, and a change applies to the next message', async () => {

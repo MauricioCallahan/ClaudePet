@@ -76,7 +76,7 @@ Rows, top to bottom, with Codex's frame counts and per-frame timings:
 | Row | State | Frames | Frame durations (ms) | Plays | Used by ClaudePet for |
 |---:|---|---:|---|---|---|
 | 0 | idle | 6 | 280, 110, 110, 140, 140, 320 | loop | idle |
-| 1 | running-right | 8 | 120 each, last 220 | loop | |
+| 1 | running-right | 8 | 120 each, last 220 | loop | working (Claude is using a tool) |
 | 2 | running-left | 8 | 120 each, last 220 | loop | |
 | 3 | waving | 4 | 140 each, last 280 | once | replied |
 | 4 | jumping | 5 | 140 each, last 280 | once | |
@@ -87,7 +87,7 @@ Rows, top to bottom, with Codex's frame counts and per-frame timings:
 | 9 | look directions, 0-157.5° | 8 | still poses | | |
 | 10 | look directions, 180-337.5° | 8 | still poses | | |
 
-Rows 9 and 10 exist only in v2 sheets: sixteen still poses looking clockwise from up, used by Codex to follow the pointer. "running" (row 7) means working or thinking, not literal running. The first idle frame (the top-left cell) is the pet's still picture, used for previews and when reduced motion is on.
+Rows 9 and 10 exist only in v2 sheets: sixteen still poses looking clockwise from up, used by Codex to follow the pointer. "running" (row 7) means thinking and "running-right" (row 1) means using a tool, not literal running. The first idle frame (the top-left cell) is the pet's still picture, used for previews and when reduced motion is on.
 
 ## Known issues
 - The chat box opens as a small bar under the pet and grows into the chat as you talk. If you prefer the full-size box, set `"ui": { "compact": false }` in `%APPDATA%\ClaudePet\settings.json` and restart.

@@ -14,11 +14,23 @@ export interface Chat {
   mode?: Mode; // missing = 'chat' (chats saved before modes existed)
 }
 
+// A tool Claude used in a reply. at: where in the reply text it ran, so a reopened chat shows it in the same place.
+export interface SavedTool {
+  name: string;
+  input?: unknown; // left out when large
+  at: number;
+  isError: boolean;
+}
+
 export interface Message {
   role: 'user' | 'claude';
   text: string;
   at: number;
+  tools?: SavedTool[];
 }
+
+const isSavedTool = (t: any): t is SavedTool =>
+  !!t && typeof t.name === 'string' && Number.isInteger(t.at) && t.at >= 0 && typeof t.isError === 'boolean';
 
 const file = () => path.join(app.getPath('userData'), 'chats.json');
 const messagesFile = (id: string) => path.join(app.getPath('userData'), 'chats', `${id}.json`);
@@ -52,9 +64,15 @@ export function parseMessages(text: string): Message[] {
   try {
     const v = JSON.parse(text);
     if (!Array.isArray(v)) return [];
-    return v.filter(
-      (m): m is Message => !!m && (m.role === 'user' || m.role === 'claude') && typeof m.text === 'string' && typeof m.at === 'number',
-    );
+    return v
+      .filter((m): m is Message => !!m && (m.role === 'user' || m.role === 'claude') && typeof m.text === 'string' && typeof m.at === 'number')
+      .map((m) => {
+        if (m.tools === undefined) return m;
+        // A bad tools list costs only its bad entries, never the message.
+        const { tools, ...rest } = m;
+        const ok = Array.isArray(tools) ? tools.filter(isSavedTool) : [];
+        return ok.length ? { ...rest, tools: ok } : rest;
+      });
   } catch {
     return [];
   }

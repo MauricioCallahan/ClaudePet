@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classify, describe, INSTALL_URL, logLine, toBridgeError } from './errors';
+import { classify, deniedMessage, describe, INSTALL_URL, logLine, toBridgeError } from './errors';
 import { isWebUrl } from './links';
 
 // Sample texts as Claude Code 2.1.321 and Windows report them.
@@ -78,4 +78,11 @@ test('toBridgeError keeps the detail and exit code for the log', () => {
 });
 test('describe: an outdated Claude Code says how to update it', () => {
   assert.match(describe('outdated', "error: unknown option '--tools'").message, /`claude update`/);
+});
+
+test('deniedMessage names the setting for a web tool and keeps the old message for any other tool', () => {
+  assert.equal(deniedMessage('WebSearch'), 'Web search is off. Turn it on in Tools and connectors.');
+  assert.equal(deniedMessage('WebFetch'), 'Web fetch is off. Turn it on in Tools and connectors.');
+  assert.equal(deniedMessage('Bash'), 'Claude Code asked to use Bash, but tools are off in pet chats.');
+  assert.equal(deniedMessage('websearch'), 'Claude Code asked to use websearch, but tools are off in pet chats.');
 });

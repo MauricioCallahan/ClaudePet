@@ -23,6 +23,8 @@ export function classify(text: string, code?: number | null): ErrorCase {
 export function deniedMessage(tool: string): string {
   if (tool === 'WebSearch') return 'Web search is off. Turn it on in Tools and connectors.';
   if (tool === 'WebFetch') return 'Web fetch is off. Turn it on in Tools and connectors.';
+  const server = /^mcp__(.+?)__./.exec(tool)?.[1];
+  if (server) return `The "${server}" server is off or not in mcp.json. Turn it on in Tools and connectors.`;
   return `Claude Code asked to use ${tool}, but tools are off in pet chats.`;
 }
 

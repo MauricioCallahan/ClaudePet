@@ -8,7 +8,8 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
-import { approvalRules, DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
+import { parseMcpConfig, type McpServer } from './mcpConfig';
+import { approvalRules, connectorSettings, DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
 import { ApprovalPipe, Approvals } from './approvals';
 import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
@@ -182,6 +183,33 @@ const approvals = new Approvals(
   },
   { rules: () => approvalRules(loadSettings()) },
 );
+// The servers in mcp.json that are not turned off, read on every send. No file means none; a broken file also means none
+// (the old servers stay out until it is fixed) and says why in bridge.log, without the file's contents.
+function enabledServers(): Record<string, McpServer> {
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(app.getPath('userData'), 'mcp.json'), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logMcp(`could not read mcp.json: ${(err as Error).message}`);
+    return {};
+  }
+  const config = parseMcpConfig(text);
+  if ('error' in config) {
+    logMcp(config.error);
+    return {};
+  }
+  const connectors = connectorSettings(loadSettings());
+  return Object.fromEntries(Object.entries(config.servers).filter(([name]) => connectors[name] !== false));
+}
+
+function logMcp(message: string): void {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'bridge.log'), `${new Date().toISOString()} mcp ${message.replace(/\s+/g, ' ').trim().slice(0, 300)}\n`);
+  } catch {
+    // a log that cannot be written must never break the reply
+  }
+}
+
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -202,6 +230,7 @@ const bridge: Bridge =
         model: () => loadSettings().model,
         tools: () => toolSettings(loadSettings()),
         rules: () => approvalRules(loadSettings()),
+        servers: enabledServers,
         approvals,
         runConfigFile: path.join(app.getPath('userData'), 'mcp-run.json'),
         instructions: () => {

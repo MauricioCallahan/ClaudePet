@@ -85,4 +85,5 @@ test('deniedMessage names the setting for a web tool and keeps the old message f
   assert.equal(deniedMessage('WebFetch'), 'Web fetch is off. Turn it on in Tools and connectors.');
   assert.equal(deniedMessage('Bash'), 'Claude Code asked to use Bash, but tools are off in pet chats.');
   assert.equal(deniedMessage('websearch'), 'Claude Code asked to use websearch, but tools are off in pet chats.');
+  assert.equal(deniedMessage('mcp__my-server__do_thing'), 'The "my-server" server is off or not in mcp.json. Turn it on in Tools and connectors.');
 });

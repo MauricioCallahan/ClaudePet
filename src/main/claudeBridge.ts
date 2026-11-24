@@ -6,6 +6,7 @@ import type { Bridge, ToolDone, ToolEvent, ToolUse } from './bridge';
 import { isSessionId, type Mode } from './chats';
 import { BridgeError, deniedMessage, describe, toBridgeError, type ErrorCase } from './errors';
 import { ruleFor, type ApprovalHost } from './approvals';
+import type { McpServer } from './mcpConfig';
 import type { Rules, ToolSettings } from './settings';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
@@ -124,6 +125,7 @@ export interface ClaudeBridgeOptions {
   model: () => unknown; // read on every send, so a settings change applies to the next message
   tools: () => ToolSettings; // read on every send, like model
   rules?: () => Rules; // approval rules, read on every send
+  servers?: () => Record<string, McpServer>; // the enabled servers from mcp.json, read on every send
   approvals?: ApprovalHost; // without it, a tool that would ask is denied
   instructions: () => string | undefined; // the user's own custom instructions file, if any
   promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
@@ -162,6 +164,12 @@ export function chatTools(tools: ToolSettings | undefined, rules: Rules = {}): {
   return { on, allowed: on.filter((n) => ruleFor(n, rules) === 'allow') };
 }
 
+// An MCP server's tools skip the approval card only when a rule allows the whole server and none of its own tools:
+// --allowedTools runs a tool without asking the approval tool, so a per-tool ask or deny would otherwise be bypassed.
+export function allowedServers(names: string[], rules: Rules = {}): string[] {
+  return names.filter((n) => ruleFor(`mcp__${n}`, rules) === 'allow' && !Object.entries(rules).some(([k, r]) => k.startsWith(`mcp__${n}__`) && r !== 'allow'));
+}
+
 // The approval server's tool, as named in mcp-run.json; Claude Code calls it before any tool that would ask.
 export const APPROVE_TOOL = 'mcp__claudepet__approve';
 
@@ -175,7 +183,8 @@ export function buildArgs({
   tools,
   rules,
   approvals,
-}: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string; tools?: ToolSettings; rules?: Rules; approvals?: string } = {}): string[] {
+  servers = [],
+}: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string; tools?: ToolSettings; rules?: Rules; approvals?: string; servers?: string[] } = {}): string[] {
   const asking = mode === 'chat' && !!approvals;
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
   // --permission-prompts none: the process is hidden, so without the approval tool anything that would ask is denied, never left waiting.
@@ -185,7 +194,8 @@ export function buildArgs({
     const { on, allowed } = chatTools(tools, rules);
     args.push('--tools', on.join(','), ...CHAT_ONLY);
     // Allowed tools run without asking; the rest go to the approval tool, or are denied without it.
-    if (allowed.length) args.push('--allowedTools', allowed.join(','));
+    const run = [...allowed, ...(asking ? allowedServers(servers, rules).map((n) => `mcp__${n}`) : [])];
+    if (run.length) args.push('--allowedTools', run.join(','));
     if (asking) args.push('--mcp-config', approvals, '--permission-prompt-tool', APPROVE_TOOL);
   }
   if (mode === 'chat' && promptFile) args.push('--system-prompt-file', promptFile);
@@ -196,10 +206,11 @@ export function buildArgs({
 // Above ClaudePet's own 5-minute deny, so an open card always gets its answer from ClaudePet.
 export const MCP_TOOL_TIMEOUT_MS = 6 * 60_000;
 
-// mcp-run.json, written on every send that can ask: only the approval server, so --strict-mcp-config loads nothing else.
-// It holds this reply's one-time token, which stops working when the reply ends.
-export function writeRunConfig(file: string, server: { command: string; args: string[] }, env: Record<string, string>): void {
-  const config = { mcpServers: { claudepet: { type: 'stdio', command: server.command, args: server.args, env: { ELECTRON_RUN_AS_NODE: '1', ...env } } } };
+// mcp-run.json, written on every send that can ask or has servers: the approval server and the enabled mcp.json servers,
+// so --strict-mcp-config loads nothing else. It holds this reply's one-time token, which stops working when the reply ends.
+// The approval server comes last, so an mcp.json entry can never replace it.
+export function writeRunConfig(file: string, server: { command: string; args: string[] }, env: Record<string, string>, servers: Record<string, McpServer> = {}): void {
+  const config = { mcpServers: { ...servers, claudepet: { type: 'stdio', command: server.command, args: server.args, env: { ELECTRON_RUN_AS_NODE: '1', ...env } } } };
   fs.writeFileSync(file, JSON.stringify(config, null, 2));
 }
 
@@ -239,13 +250,16 @@ export class ClaudeBridge implements Bridge {
     const tools = this.opts.tools();
     const rules = this.opts.rules?.() ?? {};
     const { on, allowed } = chatTools(tools, rules);
-    // The approval server runs only when some tool on can ask (or is denied by a rule, which the server answers).
+    const servers = mode === 'chat' ? (this.opts.servers?.() ?? {}) : {};
+    const names = Object.keys(servers);
+    // The run config (approval server + mcp.json servers) is used when some tool on can ask (or is denied by a rule, which
+    // the server answers) or a server is enabled.
     const { approvals, runConfigFile } = this.opts;
-    const session = mode === 'chat' && approvals && runConfigFile && on.length > allowed.length ? approvals.begin(chatId) : undefined;
+    const session = mode === 'chat' && approvals && runConfigFile && (on.length > allowed.length || names.length) ? approvals.begin(chatId) : undefined;
     let child: ChildProcessWithoutNullStreams;
     try {
-      if (session) writeRunConfig(runConfigFile!, approvals!.server, session.env);
-      const args = buildArgs({ mode, sessionId: before, model: this.opts.model(), tools, rules, promptFile: path.relative(cwd, promptFile), approvals: session && path.relative(cwd, runConfigFile!) });
+      if (session) writeRunConfig(runConfigFile!, approvals!.server, session.env, servers);
+      const args = buildArgs({ mode, sessionId: before, model: this.opts.model(), tools, rules, servers: session ? names : [], promptFile: path.relative(cwd, promptFile), approvals: session && path.relative(cwd, runConfigFile!) });
       // Claude Code's own MCP tool timeout must not fire before ClaudePet answers an open card.
       const env = session ? { ...process.env, MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS) } : process.env;
       child = spawn(file, shellArgs(args, shell), { cwd, shell, windowsHide: true, env });

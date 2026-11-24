@@ -10,6 +10,7 @@ export interface Settings {
   pet?: { enabled?: unknown; id?: unknown }; // read through petSettings; saveSettings merges shallowly, so save the whole object
   ui?: { compact?: unknown }; // read through uiSettings, once at startup
   tools?: unknown; // read through toolSettings on every send; saveSettings merges shallowly, so save the whole object
+  connectors?: unknown; // { "<server in mcp.json>": { enabled } }, read through connectorSettings on every send; save the whole object
 }
 
 export type ToolSettings = { webSearch: boolean; webFetch: boolean };
@@ -40,6 +41,12 @@ export function uiSettings(s: Settings): { compact: boolean } {
 export function toolSettings(s: Settings): ToolSettings {
   const t: { webSearch?: unknown; webFetch?: unknown } = s.tools && typeof s.tools === 'object' ? s.tools : {};
   return { webSearch: t.webSearch !== false, webFetch: t.webFetch !== false };
+}
+
+// Which mcp.json servers the user turned off: a server is on unless its "enabled" is a real false (a typo leaves it on).
+export function connectorSettings(s: Settings): Record<string, boolean> {
+  const c = s.connectors && typeof s.connectors === 'object' && !Array.isArray(s.connectors) ? Object.entries(s.connectors) : [];
+  return Object.fromEntries(c.map(([name, v]) => [name, (v as { enabled?: unknown } | null)?.enabled !== false]));
 }
 
 export type Rule = 'allow' | 'ask' | 'deny';

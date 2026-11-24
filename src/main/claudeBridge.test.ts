@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { buildArgs, chatTools, ClaudeBridge, command, findClaude, parseLine, PET_PROMPT, rewind, shellArgs, systemPrompt, writeRunConfig } from './claudeBridge';
+import { allowedServers, buildArgs, chatTools, ClaudeBridge, command, findClaude, parseLine, PET_PROMPT, rewind, shellArgs, systemPrompt, writeRunConfig } from './claudeBridge';
 import { BridgeError } from './errors';
 
 test('buildArgs resumes only with a well-formed session id', () => {
@@ -156,6 +156,63 @@ test('writeRunConfig holds only the approval server, in Node mode, with its env'
       mcpServers: { claudepet: { type: 'stdio', command: 'C:\Program Files\ClaudePet\ClaudePet.exe', args: ['server.js'], env: { ELECTRON_RUN_AS_NODE: '1', CLAUDEPET_PIPE: 'p', CLAUDEPET_TOKEN: 't' } } },
     });
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('writeRunConfig adds the mcp.json servers, and the approval server cannot be replaced by one', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-run-'));
+  try {
+    const f = path.join(dir, 'mcp-run.json');
+    const echo = { command: 'node', args: ['echo.js'], extra: 1 };
+    writeRunConfig(f, { command: 'app.exe', args: ['server.js'] }, { CLAUDEPET_TOKEN: 't' }, { echo, claudepet: { command: 'evil' } });
+    const { mcpServers } = JSON.parse(fs.readFileSync(f, 'utf8'));
+    assert.deepEqual(mcpServers.echo, echo);
+    assert.equal(mcpServers.claudepet.command, 'app.exe');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('an MCP server runs without a card only when a rule allows it and none of its own tools', () => {
+  assert.deepEqual(allowedServers(['a', 'b']), []); // no rule: ask
+  assert.deepEqual(allowedServers(['a', 'b'], { mcp__a: 'allow', mcp__b: 'ask' }), ['a']);
+  assert.deepEqual(allowedServers(['a'], { mcp__a: 'allow', mcp__a__delete: 'deny' }), []); // --allowedTools would skip the deny
+  assert.deepEqual(allowedServers(['a'], { mcp__a: 'allow', mcp__a__read: 'allow', 'mcp__a-b__x': 'deny' }), ['a']);
+  const a = buildArgs({ tools: { webSearch: true, webFetch: false }, rules: { mcp__a: 'allow' }, approvals: 'r.json', servers: ['a', 'b'] });
+  assert.equal(a[a.indexOf('--allowedTools') + 1], 'WebSearch,mcp__a');
+  assert.ok(!buildArgs({ rules: { mcp__a: 'allow' }, servers: ['a'] }).includes('--allowedTools')); // no approval tool: nothing is passed
+});
+test('a chat with an enabled server writes it into mcp-run.json even when nothing would ask', async () => {
+  const { ApprovalPipe, Approvals } = await import('./approvals');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-servers-'));
+  const pipe = new ApprovalPipe();
+  const approvals = new Approvals(pipe, { command: 'app.exe', args: ['server.js'] }, () => {});
+  const bridge = (servers: Record<string, Record<string, unknown>>) =>
+    new ClaudeBridge({
+      exe: () => path.resolve('e2e/fixtures/fake-claude.cmd'),
+      cwd: path.join(dir, 'workspace'),
+      sessions: { get: () => undefined, set: () => {} },
+      mode: () => 'chat',
+      model: () => undefined,
+      tools: () => ({ webSearch: false, webFetch: false }),
+      servers: () => servers,
+      approvals,
+      runConfigFile: path.join(dir, 'mcp-run.json'),
+      instructions: () => undefined,
+      promptFile: path.join(dir, 'prompt.md'),
+      idleMs: 30_000,
+    });
+  const args = async (b: ClaudeBridge) => {
+    let text = '';
+    for await (const ev of b.send('c', '/args', new AbortController().signal)) if (typeof ev === 'string') text += ev;
+    return JSON.parse(text.replace(/```/g, '')).args as string[];
+  };
+  try {
+    const on = await args(bridge({ echo: { command: 'node' } }));
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(path.join(dir, 'mcp-run.json'), 'utf8')).mcpServers), ['echo', 'claudepet']);
+    assert.ok(on.includes('--mcp-config') && on.includes('--permission-prompt-tool'));
+    assert.ok(!(await args(bridge({}))).includes('--mcp-config')); // none enabled and nothing to ask: no run config
+  } finally {
+    pipe.dispose();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

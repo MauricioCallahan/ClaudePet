@@ -2,6 +2,14 @@ import { test, expect, _electron, type ElectronApplication, type Page } from '@p
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+
+// Processes running now with this name and a command line like the pattern (PowerShell's own line never has the name).
+const running = (name: string, like: string) =>
+  Number(execFileSync('powershell', ['-NoProfile', '-Command', `@(Get-CimInstance Win32_Process -Filter "Name='${name}'" | Where-Object { $_.CommandLine -like '${like}' }).Count`], { encoding: 'utf8' }).trim());
+// The approval server is ClaudePet.exe (electron.exe here) in Node mode; the fake claude runs under node.
+const servers = () => running('electron.exe', '*approval*server.js*');
+const fakeClaudes = () => running('node.exe', '*fake-claude.js*');
 
 // Approvals with the fake claude CLI: "/approve WebFetch [Bash]" calls those tools at once and asks through
 // ClaudePet's approval server, the way claude does. WebFetch has an ask rule so the server is passed.
@@ -30,6 +38,8 @@ for (const compact of [false, true]) {
       fs.rmSync(profile, { recursive: true, force: true });
     });
 
+    // Sprite rows (see STATE_ROW): 6 waiting, 1 working, 0 idle.
+    const row = () => app.windows().find((p) => p.url().endsWith('pet.html'))?.evaluate(() => document.getElementById('pet')!.dataset.row);
     const card = () => page.locator('#approval');
     const reply = () => page.locator('#messages .msg.claude').last();
     const idle = () => expect(page.locator('#send')).toHaveText('Send', { timeout: 30_000 });
@@ -88,6 +98,39 @@ for (const compact of [false, true]) {
       await expect(card()).toBeHidden();
       await expect(reply().locator('.part')).toHaveText('WebFetch: ran; Bash: ran');
       await idle();
+    });
+
+    test('the pet waits while the card is open, and Stop closes the card with no error', async () => {
+      await ask('/approve WebFetch');
+      await expect(card()).toBeVisible();
+      await expect.poll(row).toBe('6');
+      await page.click('#send'); // reads Stop while the reply runs
+      await expect(card()).toBeHidden();
+      await idle();
+      await expect.poll(row).toBe('0');
+      await expect(page.locator('#messages .msg.claude', { hasText: /tools are off|Web fetch is off/ })).toHaveCount(0);
+    });
+
+    // Last but one: the chat remembers the answer for the rest of the run.
+    test('Allow for this chat: the next call of the same tool in this chat shows no card', async () => {
+      await ask('/approve WebFetch');
+      await card().locator('[data-answer="chat"]').click();
+      await expect(reply().locator('.part')).toHaveText('WebFetch: ran');
+      await idle();
+      await ask('/approve WebFetch'); // a card would hold the reply until it is answered
+      await expect(reply().locator('.part')).toHaveText('WebFetch: ran');
+      await idle();
+      await expect(card()).toBeHidden();
+    });
+
+    test('Quit with a card open leaves no approval server or claude running', async () => {
+      await ask('/approve Bash'); // Bash still asks
+      await expect(card()).toBeVisible();
+      expect(servers()).toBeGreaterThan(0);
+      expect(fakeClaudes()).toBeGreaterThan(0);
+      await app.close();
+      await expect.poll(servers, { timeout: 15_000 }).toBe(0);
+      await expect.poll(fakeClaudes, { timeout: 15_000 }).toBe(0);
     });
   });
 }

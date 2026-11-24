@@ -88,6 +88,7 @@ type ChatSummary = { id: string; title: string; updatedAt: number };
 type SavedTool = { name: string; input?: unknown; at: number; isError: boolean };
 type Message = { role: 'user' | 'claude'; text: string; at: number; tools?: SavedTool[] };
 type ToolEvent = { tool: { id: string; name: string; input: unknown } } | { toolDone: { id: string; isError: boolean } };
+type Card = { id: string; toolName: string; input: unknown; index: number; total: number };
 
 // Provided by the preload script.
 declare const pet: {
@@ -107,6 +108,8 @@ declare const pet: {
   onReplyChunk(cb: (text: string) => void): void;
   onReplyTool(cb: (event: ToolEvent) => void): void;
   onReplyEnd(cb: () => void): void;
+  onApproval(cb: (card: Card | null) => void): void;
+  answerApproval(id: string, answer: 'once' | 'chat' | 'deny'): void;
   onReplyError(cb: (error: ReplyError) => void): void;
   isCompact(): Promise<boolean>;
   fitBox(mode: Mode, height: number): void;
@@ -258,6 +261,60 @@ pet.onReplyError((error) => {
   setState('error');
 });
 
+// The approval card: a tool call waiting for an answer. Main sends the card to show (null for none) and checks every answer.
+// The tool name and input come from Claude: textContent only, never HTML.
+const approval = document.getElementById('approval')!;
+const approvalTitle = document.getElementById('approval-title')!;
+const approvalCount = document.getElementById('approval-count')!;
+const approvalDetails = document.getElementById('approval-details')!;
+const approvalInput = document.getElementById('approval-input')!;
+const allowOnce = approval.querySelector<HTMLButtonElement>('[data-answer="once"]')!;
+let card: Card | null = null;
+const MAX_DETAILS = 4000;
+function inputText(input: unknown): string {
+  const text = JSON.stringify(input, null, 2) ?? String(input);
+  return text.length > MAX_DETAILS ? `${text.slice(0, MAX_DETAILS)}…` : text;
+}
+function showDetails(open: boolean): void {
+  approvalInput.hidden = !open;
+  approvalDetails.setAttribute('aria-expanded', String(open));
+}
+pet.onApproval((c) => {
+  const fresh = c?.id !== card?.id;
+  card = c;
+  approval.hidden = !c;
+  if (c) {
+    approvalTitle.textContent = `Claude wants to ${toolLabel(c.toolName, c.input).ask}`;
+    approvalCount.textContent = c.total > 1 ? `${c.index} of ${c.total}` : '';
+    if (fresh) {
+      approvalInput.textContent = inputText(c.input);
+      showDetails(false);
+    }
+    if (compact && mode !== 'chat') setMode('chat'); // the compact box grows to hold the card
+    if (fresh) allowOnce.focus();
+  } else if (approval.contains(document.activeElement)) input.focus();
+  refit();
+});
+function answer(a: 'once' | 'chat' | 'deny'): void {
+  if (card) pet.answerApproval(card.id, a); // main answers with the next card, or null
+}
+approval.addEventListener('click', (e) => {
+  const t = e.target as HTMLElement;
+  if (t === approvalDetails) return showDetails(approvalDetails.getAttribute('aria-expanded') !== 'true');
+  const a = t.closest<HTMLElement>('[data-answer]')?.dataset.answer;
+  if (a === 'once' || a === 'chat' || a === 'deny') answer(a);
+});
+// Enter = Allow once (a focused button keeps its own Enter), Esc = Deny and does not also collapse the box.
+approval.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.stopPropagation();
+    answer('deny');
+  } else if (e.key === 'Enter' && !(e.target as HTMLElement).closest('button')) {
+    e.preventDefault();
+    answer('once');
+  }
+});
+
 // The chat list takes the place of the conversation while it is open.
 const chatsButton = document.getElementById('chats-button')!;
 const chatsPanel = document.getElementById('chats')!;
@@ -390,7 +447,12 @@ pet.onOpenChat(async (id) => {
   resetChat(id, await pet.loadChat(id));
   if (compact) expand('chat'); // after the history is drawn, so the box fits it at once
 });
-pet.onFocusInput(() => input.focus());
+// The hotkey or tray opened the box: straight to a waiting card, else the input.
+pet.onFocusInput(() => {
+  if (!card) return input.focus();
+  if (compact && mode !== 'chat') setMode('chat');
+  allowOnce.focus();
+});
 pet.onChatDeleted((id) => {
   if (id === chatId) {
     resetChat(crypto.randomUUID());
@@ -424,7 +486,7 @@ function setMode(m: Mode): void {
 function chatHeight(): number {
   const last = messages.lastElementChild as HTMLElement | null; // offsetTop counts from #messages (position: relative)
   const content = last ? last.offsetTop + last.offsetHeight + parseFloat(getComputedStyle(messages).paddingBottom) : 0;
-  return content + thinking.offsetHeight + form.offsetHeight; // the form, not the bar: the bar may still be morphing
+  return content + approval.offsetHeight + thinking.offsetHeight + form.offsetHeight; // the form, not the bar: the bar may still be morphing
 }
 let fitted = ''; // the last size sent, so a streamed reply resizes the window only when its height changes
 function fit(): void {
@@ -465,6 +527,7 @@ function compose(): void {
 // From main: a click outside the box (animated, like Esc), or the box was hidden (at once). The chat, its
 // messages and any unsent text stay.
 pet.onCollapse((instant) => {
+  if (!instant && card) return; // a click elsewhere must not hide a card Claude is waiting on; Esc denies it
   if (!instant) return collapse();
   document.body.classList.add('instant');
   if (!chatsPanel.hidden) void showList(false);

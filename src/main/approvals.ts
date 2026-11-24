@@ -35,21 +35,81 @@ export interface ApprovalHost {
   begin(chatId: string): ApprovalSession;
 }
 
+export type Answer = 'once' | 'chat' | 'deny';
+// What the approval card shows; index/total count the requests that came together ("1 of 2").
+export interface Card {
+  id: string;
+  toolName: string;
+  input: unknown;
+  index: number;
+  total: number;
+}
+
+export const DENIED = 'The user denied this tool call.';
+export const STOPPED = 'The reply was stopped before the user answered.';
+
+interface Pending {
+  card: string;
+  token: string;
+  req: ApprovalRequest;
+  resolve: (v: Verdict) => void;
+}
+
+// Claude can ask for two tools at once: requests queue, and the card shows the first until it is answered.
 export class Approvals implements ApprovalHost {
+  private queue: Pending[] = [];
+  private answeredInBatch = 0; // requests answered since the queue was last empty, for "2 of 2"
+
   constructor(
     private pipe: ApprovalPipe,
     readonly server: { command: string; args: string[] },
-    private ask: (chatId: string, req: ApprovalRequest) => Promise<Verdict>,
+    private show: (card: Card | undefined) => void, // undefined: no card
   ) {}
 
-  begin(chatId: string): ApprovalSession {
+  begin(_chatId: string): ApprovalSession {
     const answered = new Set<string>();
     const token = this.pipe.open(async (req) => {
-      const v = await this.ask(chatId, req);
+      const v = await new Promise<Verdict>((resolve) => this.enqueue({ card: crypto.randomUUID(), token, req, resolve }));
       if (req.toolUseId) answered.add(req.toolUseId);
       return v;
     });
-    return { env: { CLAUDEPET_PIPE: this.pipe.name, CLAUDEPET_TOKEN: token }, answered, end: () => this.pipe.close(token) };
+    return {
+      env: { CLAUDEPET_PIPE: this.pipe.name, CLAUDEPET_TOKEN: token },
+      answered,
+      // Stop, New chat, another chat, Quit or the reply ending: its cards are answered deny and go away.
+      end: () => {
+        this.pipe.close(token);
+        this.settle((p) => p.token === token, { allow: false, message: STOPPED });
+      },
+    };
+  }
+
+  // From the card. Only the card on screen can be answered; a stale or made-up id does nothing.
+  answer(card: unknown, a: unknown): boolean {
+    const head = this.queue[0];
+    if (!head || card !== head.card || (a !== 'once' && a !== 'chat' && a !== 'deny')) return false;
+    this.settle((p) => p === head, a === 'deny' ? { allow: false, message: DENIED } : { allow: true });
+    return true;
+  }
+
+  private enqueue(p: Pending): void {
+    this.queue.push(p);
+    this.render();
+  }
+
+  private settle(match: (p: Pending) => boolean, v: Verdict): void {
+    const done = this.queue.filter(match);
+    if (!done.length) return;
+    this.queue = this.queue.filter((p) => !match(p));
+    this.answeredInBatch += done.length;
+    for (const p of done) p.resolve(v);
+    this.render();
+  }
+
+  private render(): void {
+    const head = this.queue[0];
+    if (!head) this.answeredInBatch = 0;
+    this.show(head && { id: head.card, toolName: head.req.toolName, input: head.req.input, index: this.answeredInBatch + 1, total: this.answeredInBatch + this.queue.length });
   }
 }
 

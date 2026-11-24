@@ -170,10 +170,12 @@ const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
 const transcriptOf = (sessionId: string) => transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, sessionId);
 // Claude Code starts the approval server as this same executable in Node mode (no separate Node needed).
 const approvalPipe = new ApprovalPipe();
-const approvals = new Approvals(approvalPipe, { command: process.execPath, args: [path.join(__dirname, '../approval/server.js')] }, async () => ({
-  allow: false,
-  message: 'Approvals are not ready yet.', // shortcut: replaced by the approval card in M2.6-3.3
-}));
+let shownCard: string | undefined; // the card on screen, so a repeat of it does not balloon again
+const approvals = new Approvals(approvalPipe, { command: process.execPath, args: [path.join(__dirname, '../approval/server.js')] }, (card) => {
+  win?.webContents.send('approval:show', card ?? null);
+  if (card && card.id !== shownCard && !win?.isVisible()) notify('Claude is waiting', 'Claude wants to use a tool. Open ClaudePet to allow or deny it.');
+  shownCard = card?.id;
+});
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -474,6 +476,10 @@ if (!app.requestSingleInstanceLock()) {
       if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
+    // Only the box may answer, and only the card it is showing (checked in Approvals.answer).
+    ipcMain.on('approval:answer', (e, card: unknown, answer: unknown) => {
+      if (win && e.sender === win.webContents) approvals.answer(card, answer);
+    });
     ipcMain.on('chat:open', (_e, id: unknown) => {
       if (isChatId(id)) void openChat(id);
     });

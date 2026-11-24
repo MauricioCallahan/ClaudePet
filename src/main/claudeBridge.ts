@@ -98,9 +98,11 @@ export function parseLine(line: string): BridgeEvent | null {
     const denied = (Array.isArray(v.permission_denials) ? v.permission_denials : [])
       .filter((d: any) => d && typeof d === 'object')
       .map((d: any) => ({ toolName: typeof d.tool_name === 'string' ? d.tool_name : 'a tool', ...(typeof d.tool_use_id === 'string' ? { id: d.tool_use_id } : {}) }));
-    if (denied.length) return { denied };
-    if (!v.is_error) return sessionId ? { sessionId } : null;
-    return { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' };
+    // A failed turn keeps its own error even when it also lists denials (the user may have denied one and Claude carried on).
+    const error = v.is_error ? { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' } : undefined;
+    if (denied.length) return { denied, ...error };
+    if (error) return error;
+    return sessionId ? { sessionId } : null;
   }
   return null;
 }

@@ -119,6 +119,10 @@ test('parseLine: a result lists every denied tool with its id, even though it sa
   assert.deepEqual(parseLine(odd), { denied: [{ toolName: 'WebFetch', id: 'a' }, { toolName: 'a tool' }] });
   assert.deepEqual(parseLine(JSON.stringify({ type: 'result', is_error: false, permission_denials: [], session_id: 's' })), { sessionId: 's' });
 });
+test('parseLine: a failed turn that also lists denials keeps its error', () => {
+  const line = JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'API Error: 500', permission_denials: [{ tool_name: 'WebFetch', tool_use_id: 'a' }] });
+  assert.deepEqual(parseLine(line), { denied: [{ toolName: 'WebFetch', id: 'a' }], error: 'API Error: 500' });
+});
 test('buildArgs never lets a permission prompt wait for an answer without the approval tool, in any mode', () => {
   for (const mode of ['chat', 'code'] as const) assert.equal(buildArgs({ mode }).join(' ').includes('--permission-prompts none'), true);
   assert.equal(buildArgs({ mode: 'code', approvals: 'x.json' }).join(' ').includes('--permission-prompts none'), true); // code mode keeps the user's setup

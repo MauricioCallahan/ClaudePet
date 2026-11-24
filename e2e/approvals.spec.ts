@@ -123,6 +123,19 @@ for (const compact of [false, true]) {
       await expect(card()).toBeHidden();
     });
 
+    test('with the box hidden, the hotkey opens straight to the waiting card', async () => {
+      await ask('/approve Bash'); // Bash still asks
+      await expect(card()).toBeVisible();
+      await page.focus('#input'); // the cursor elsewhere, so the hotkey has to move it
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith('index.html'))!.hide());
+      if (compact) await expect.poll(() => page.evaluate(() => document.body.dataset.mode)).toBe('collapsed'); // hiding collapses the bar
+      await app.evaluate(({}, f) => process.mainModule!.require(f).onHotkey(), path.resolve('dist/main/main.js'));
+      await expect(card().locator('[data-answer="once"]')).toBeFocused();
+      if (compact) expect(await page.evaluate(() => document.body.dataset.mode)).toBe('chat');
+      await card().locator('[data-answer="deny"]').click();
+      await idle();
+    });
+
     test('Quit with a card open leaves no approval server or claude running', async () => {
       await ask('/approve Bash'); // Bash still asks
       await expect(card()).toBeVisible();

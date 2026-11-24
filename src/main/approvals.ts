@@ -35,7 +35,6 @@ export interface ApprovalHost {
   begin(chatId: string): ApprovalSession;
 }
 
-export type Answer = 'once' | 'chat' | 'deny';
 // What the approval card shows; index/total count the requests that came together ("1 of 2").
 export interface Card {
   id: string;

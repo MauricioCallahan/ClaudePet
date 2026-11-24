@@ -36,10 +36,10 @@ export function uiSettings(s: Settings): { compact: boolean } {
   return { compact: typeof u.compact === 'boolean' ? u.compact : true };
 }
 
-// Only a real true turns a tool on: a typo, "true" or null leaves it off.
+// The read-only web tools are on by default; only a real false turns one off (a typo, "false" or null leaves it on).
 export function toolSettings(s: Settings): ToolSettings {
   const t: { webSearch?: unknown; webFetch?: unknown } = s.tools && typeof s.tools === 'object' ? s.tools : {};
-  return { webSearch: t.webSearch === true, webFetch: t.webFetch === true };
+  return { webSearch: t.webSearch !== false, webFetch: t.webFetch !== false };
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

@@ -34,16 +34,27 @@ test.afterAll(async () => {
   fs.rmSync(profile, { recursive: true, force: true });
 });
 
-test('with no tools setting, no tools are offered or allowed', async () => {
+const setTools = (tools: object) => {
+  const file = path.join(profile, 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), tools }));
+};
+
+test('with no tools setting, both web tools are offered and allowed', async () => {
   const args = await started();
-  expect(flag(args, '--tools')).toBe('');
-  expect(args).not.toContain('--allowedTools');
+  expect(flag(args, '--tools')).toBe('WebSearch,WebFetch');
+  expect(flag(args, '--allowedTools')).toBe('WebSearch,WebFetch');
 });
 
-test('turning on web search applies to the next message, with no restart', async () => {
-  const file = path.join(profile, 'settings.json');
-  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), tools: { webSearch: true } }));
+test('turning web fetch off applies to the next message, with no restart', async () => {
+  setTools({ webFetch: false });
   const args = await started();
   expect(flag(args, '--tools')).toBe('WebSearch');
   expect(flag(args, '--allowedTools')).toBe('WebSearch');
+});
+
+test('with both off, no tools are offered, and the empty value survives the .cmd shim', async () => {
+  setTools({ webSearch: false, webFetch: false });
+  const args = await started();
+  expect(flag(args, '--tools')).toBe('');
+  expect(args).not.toContain('--allowedTools');
 });

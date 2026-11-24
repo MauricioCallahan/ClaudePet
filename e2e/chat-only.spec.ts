@@ -36,9 +36,8 @@ test.afterAll(async () => {
   fs.rmSync(profile, { recursive: true, force: true });
 });
 
-test('tools and the user setup are off, and the empty values survive the .cmd shim', async () => {
+test('the user setup is off, and the empty values survive the .cmd shim', async () => {
   const { args } = await started();
-  expect(args[args.indexOf('--tools') + 1]).toBe('');
   expect(args[args.indexOf('--setting-sources') + 1]).toBe('');
   expect(args).toEqual(expect.arrayContaining(['--strict-mcp-config', '--disable-slash-commands']));
 });

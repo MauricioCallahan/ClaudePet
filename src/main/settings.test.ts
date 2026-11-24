@@ -42,16 +42,16 @@ test('a bad ui.compact or ui falls back to compact', () => {
   for (const ui of [false, 'x', null]) assert.equal(uiSettings({ ui } as never).compact, true);
 });
 
-test('web tools are off when nothing is set', () => {
-  assert.deepEqual(toolSettings({}), { webSearch: false, webFetch: false });
+test('web tools are on when nothing is set', () => {
+  assert.deepEqual(toolSettings({}), { webSearch: true, webFetch: true });
 });
-test('only a real true turns a web tool on', () => {
-  for (const v of ['true', 1, null]) assert.deepEqual(toolSettings({ tools: { webSearch: v, webFetch: v } }), { webSearch: false, webFetch: false });
-  assert.deepEqual(toolSettings({ tools: { websearch: true, WebFetch: true } }), { webSearch: false, webFetch: false });
+test('only a real false turns a web tool off', () => {
+  for (const v of ['false', 0, null, true]) assert.deepEqual(toolSettings({ tools: { webSearch: v, webFetch: v } }), { webSearch: true, webFetch: true });
+  assert.deepEqual(toolSettings({ tools: { websearch: false, WebFetch: false } }), { webSearch: true, webFetch: true });
 });
-test('a tools setting that is not an object leaves the web tools off', () => {
-  for (const tools of [true, 'webSearch', null, ['webSearch']]) assert.deepEqual(toolSettings({ tools }), { webSearch: false, webFetch: false });
+test('a tools setting that is not an object leaves the web tools on', () => {
+  for (const tools of [false, 'off', null, []]) assert.deepEqual(toolSettings({ tools }), { webSearch: true, webFetch: true });
 });
-test('webSearch true turns on search only', () => {
-  assert.deepEqual(toolSettings({ tools: { webSearch: true } }), { webSearch: true, webFetch: false });
+test('webSearch false turns off search only', () => {
+  assert.deepEqual(toolSettings({ tools: { webSearch: false } }), { webSearch: false, webFetch: true });
 });

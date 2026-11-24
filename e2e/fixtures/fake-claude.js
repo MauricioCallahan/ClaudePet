@@ -9,7 +9,12 @@ const say = (text) => out({ type: 'stream_event', event: { type: 'content_block_
 let prompt = '';
 process.stdin.on('data', (d) => (prompt += d));
 process.stdin.on('end', () => {
-  out({ type: 'system', subtype: 'init', session_id });
+  // Like claude, the init line lists every server in --mcp-config, the approval server included; "missing-command" fails to start.
+  const mcpFile = args.includes('--mcp-config') ? args[args.indexOf('--mcp-config') + 1] : undefined;
+  const mcp_servers = mcpFile
+    ? Object.entries(JSON.parse(fs.readFileSync(mcpFile, 'utf8')).mcpServers).map(([name, s]) => ({ name, status: s.command === 'missing-command' ? 'failed' : 'connected', source: 'dynamic' }))
+    : [];
+  out({ type: 'system', subtype: 'init', session_id, mcp_servers });
   // Like claude, the user's turn reaches the session transcript as the turn starts.
   if (process.env.FAKE_TRANSCRIPT) fs.appendFileSync(process.env.FAKE_TRANSCRIPT, JSON.stringify({ type: 'user', prompt }) + '\n');
   if (prompt.startsWith('/hang')) {

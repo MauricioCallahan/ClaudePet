@@ -98,6 +98,21 @@ test('offline shows the network error, and Retry sends the prompt to Claude once
   expect(turns).toHaveLength(1);
 });
 
+// A server from mcp.json, started by the real Claude Code, called after the approval card: the one path the fake can't prove.
+test('a tool of an mcp.json server runs after Allow once, and the log holds no secret', async () => {
+  const secret = 's3cr3t-value';
+  fs.writeFileSync(path.join(profile, 'mcp.json'), JSON.stringify({ mcpServers: { echo: { command: 'node', args: [path.resolve('e2e/fixtures/echo-mcp.js')], env: { TOKEN: secret } } } }));
+  await page.fill('#input', 'Call the echo tool from the echo server with the text kumquat, then reply with only the text it returned.');
+  await page.press('#input', 'Enter');
+  await expect(page.locator('#approval-title')).toHaveText('Claude wants to use Echo: echo', { timeout: 120_000 });
+  await page.click('#approval [data-answer="once"]');
+  await expect(page.locator('#send')).toHaveText('Send', { timeout: 120_000 });
+  await expect(lastReply()).toContainText(/kumquat/i);
+  expect(errors()).not.toContain(secret);
+  expect(errors()).not.toMatch(/ mcp /); // the server connected, so nothing about it was logged
+  fs.rmSync(path.join(profile, 'mcp.json'));
+});
+
 test('Delete removes the chat and its real Claude Code transcript', async () => {
   const file = transcript();
   await page.click('#chats-button');

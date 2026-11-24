@@ -78,7 +78,7 @@ export function upsert(chats: Chat[], id: string, text: string, now: number): Ch
   return [next, ...chats.filter((c) => c.id !== id)];
 }
 
-export function setSession(chats: Chat[], id: string, sessionId: string): Chat[] {
+export function setSession(chats: Chat[], id: string, sessionId: string | undefined): Chat[] {
   return chats.map((c) => (c.id === id ? { ...c, sessionId } : c));
 }
 
@@ -88,10 +88,13 @@ export function rename(chats: Chat[], id: string, title: string): Chat[] {
   return t ? chats.map((c) => (c.id === id ? { ...c, title: t } : c)) : chats;
 }
 
+// A session id names a transcript file and becomes a --resume argument, so only a plain UUID is ever used.
+export const isSessionId = (s: unknown): s is string => typeof s === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(s);
+
 // Where Claude Code keeps a session's transcript: its folder name is the cwd with every
-// non-alphanumeric character turned into '-' (checked against claude 2.1). Only a uuid may name a file.
+// non-alphanumeric character turned into '-' (checked against claude 2.1).
 export function transcriptPath(configDir: string, cwd: string, sessionId: string): string | undefined {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) return undefined;
+  if (!isSessionId(sessionId)) return undefined;
   return path.join(configDir, 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'), `${sessionId}.jsonl`);
 }
 

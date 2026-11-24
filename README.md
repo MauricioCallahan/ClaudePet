@@ -56,7 +56,7 @@ Built-in pets live in `assets/pets/`, installed pets in `%APPDATA%\ClaudePet\pet
 
 | Field | Required | Rule |
 |---|---|---|
-| `id` | yes | 1-64 characters: lowercase letters, digits and dashes, starting with a letter or digit. It is also the folder name. |
+| `id` | yes | 1-64 characters: letters, digits, `_`, `.` and `-`, starting with a letter or digit and not ending in `.`. It is also the folder name, except in Codex's pets folder, whose folders may be named any way. |
 | `displayName` | yes | Non-empty text shown in the pet picker. |
 | `description` | no | Text; empty if missing. |
 | `spritesheetPath` | yes | Path to the sprite sheet, relative to the pet folder, ending in `.png` or `.webp`. It may not be absolute or contain a `..` segment, so it always stays inside the folder. |

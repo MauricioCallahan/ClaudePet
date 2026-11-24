@@ -33,7 +33,7 @@ export function parsePetJson(text: string): PetManifest {
   for (const k of ['id', 'displayName', 'spritesheetPath'])
     if (typeof o[k] !== 'string' || !(o[k] as string).trim()) throw new Error(`pet.json: "${k}" is missing or empty`);
   if (!isPetId(o.id))
-    throw new Error(`pet.json: id "${o.id}" must be 1-64 lowercase letters, digits or dashes, starting with a letter or digit`);
+    throw new Error(`pet.json: id "${o.id}" must be 1-64 letters, digits, "_", "." or "-", starting with a letter or digit and not ending in "."`);
   // Only the known fields are copied, so extras like Codex's "kind" are ignored.
   return {
     id: o.id,

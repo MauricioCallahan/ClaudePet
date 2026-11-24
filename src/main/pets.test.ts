@@ -84,6 +84,17 @@ test('listPets skips a folder whose name does not match its id', () => {
   });
 });
 
+test('listPets reads a Codex pet whose folder is not named after its id', () => {
+  withFolders((dirs) => {
+    addPet(dirs.codex, 'Bastion Tank', 'Bastion_Tank');
+    addPet(dirs.user, 'twin');
+    addPet(dirs.codex, 'twin-copy', 'twin'); // still loses to the ClaudePet copy, by id
+    const r = list(dirs);
+    assert.deepEqual(ids(r), ['user:twin', 'codex:Bastion_Tank']);
+    assert.match(r.skipped[0].reason, /ClaudePet copy of "twin" is used/);
+  });
+});
+
 test('listPets: the ClaudePet copy of a pet beats the Codex copy', () => {
   withFolders((dirs) => {
     addPet(dirs.user, 'twin');

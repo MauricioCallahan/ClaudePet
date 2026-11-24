@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { buildArgs, command, findClaude, parseLine, PET_PROMPT, shellArgs, systemPrompt } from './claudeBridge';
+import fs from 'node:fs';
+import os from 'node:os';
+import { buildArgs, ClaudeBridge, command, findClaude, parseLine, PET_PROMPT, rewind, shellArgs, systemPrompt } from './claudeBridge';
+import { BridgeError } from './errors';
 
 test('buildArgs resumes only with a well-formed session id', () => {
   const id = '730602b1-d89c-41bf-9f2d-54bc04302aef';
@@ -127,4 +130,70 @@ test('parseLine: an api_retry with no response means offline; one with a status 
   assert.deepEqual(parseLine(retry(null)), { offline: 1 });
   assert.deepEqual(parseLine(retry(null, 3)), { offline: 3 }); // the attempt of this request, not a running total
   assert.equal(parseLine(retry(529)), null);
+});
+
+test('rewind cuts a transcript back to its old bytes, and leaves one whose start changed', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-rewind-'));
+  try {
+    const f = path.join(dir, 's.jsonl');
+    fs.writeFileSync(f, 'a\nb\nfailed turn\n');
+    rewind(f, Buffer.from('a\nb\n'));
+    assert.equal(fs.readFileSync(f, 'utf8'), 'a\nb\n');
+    fs.writeFileSync(f, 'rewritten\nfailed turn\n');
+    rewind(f, Buffer.from('a\nb\n'));
+    assert.equal(fs.readFileSync(f, 'utf8'), 'rewritten\nfailed turn\n');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Drives the real bridge with the e2e fake claude, which writes the user's turn to FAKE_TRANSCRIPT as it starts.
+test('a turn that ends with Retry offered is taken out of the session, so Retry sends the prompt once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-undo-'));
+  const transcript = path.join(dir, 's.jsonl');
+  const offline = path.join(dir, 'offline');
+  fs.writeFileSync(offline, '');
+  Object.assign(process.env, { FAKE_TRANSCRIPT: transcript, FAKE_OFFLINE_FILE: offline });
+  let session: string | undefined;
+  const sets: (string | undefined)[] = [];
+  const bridge = new ClaudeBridge({
+    exe: () => path.resolve('e2e/fixtures/fake-claude.cmd'),
+    cwd: path.join(dir, 'workspace'),
+    sessions: { get: () => session, set: (_id, s) => (sets.push(s), (session = s)) },
+    transcript: () => transcript,
+    mode: () => 'chat',
+    model: () => undefined,
+    instructions: () => undefined,
+    promptFile: path.join(dir, 'prompt.md'),
+    idleMs: 30_000,
+  });
+  const run = async (text: string) => {
+    try {
+      for await (const _ of bridge.send('c', text, new AbortController().signal));
+    } catch (err) {
+      return err as BridgeError;
+    }
+  };
+  try {
+    // The first turn: the half-made session is dropped and its transcript removed.
+    assert.equal((await run('/offline'))?.info.case, 'network');
+    assert.equal(session, undefined);
+    assert.ok(sets.includes('11111111-2222-4333-8444-555555555555'));
+    assert.equal(fs.existsSync(transcript), false);
+
+    // A later turn: the transcript goes back to what it held before.
+    session = '11111111-2222-4333-8444-555555555555';
+    fs.writeFileSync(transcript, '{"type":"user","prompt":"hi"}\n');
+    assert.equal((await run('/offline'))?.info.case, 'network');
+    assert.equal(fs.readFileSync(transcript, 'utf8'), '{"type":"user","prompt":"hi"}\n');
+    assert.equal(session, '11111111-2222-4333-8444-555555555555');
+
+    // An error without Retry keeps the turn.
+    assert.equal((await run('/signedout'))?.info.case, 'not-signed-in');
+    assert.match(fs.readFileSync(transcript, 'utf8'), /signedout/);
+  } finally {
+    delete process.env.FAKE_TRANSCRIPT;
+    delete process.env.FAKE_OFFLINE_FILE;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

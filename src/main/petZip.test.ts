@@ -221,3 +221,12 @@ test('installPet keeps a sprite sheet in a sub-folder of the pet', withInstall(a
   await installPet(await makeZip({ 'pet.json': json({ spritesheetPath: 'art/sheet.png' }), 'art/sheet.png': fixture('valid', 'spritesheet.png') }), o);
   assert.ok(fs.existsSync(path.join(o.petsDir, 'valid', 'art', 'sheet.png')));
 }));
+
+test('installPet installs what the caller read, and refuses a zip swapped since then', withInstall(async (o) => {
+  const zip = await makeZip(good());
+  const read = await readPetZip(zip);
+  fs.copyFileSync(await makeZip({ ...good(), 'pet.json': json({ id: 'other' }) }), zip); // replaced while the Replace? prompt was open
+  await assert.rejects(installPet(zip, { ...o, read }), /the zip changed/);
+  assert.deepEqual(fs.existsSync(o.petsDir) ? fs.readdirSync(o.petsDir) : [], []);
+  assert.deepEqual(leftovers(o), []);
+}));

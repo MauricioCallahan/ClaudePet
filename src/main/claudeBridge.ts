@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge } from './bridge';
-import type { Mode } from './chats';
+import { isSessionId, type Mode } from './chats';
 import { BridgeError, describe, toBridgeError, type ErrorCase } from './errors';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
@@ -91,7 +91,8 @@ function killTree(child: ChildProcess): void {
 export interface ClaudeBridgeOptions {
   exe: () => string | undefined;
   cwd: string; // Claude Code keeps sessions per folder, so this must not change between runs
-  sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string): void };
+  sessions: { get(chatId: string): string | undefined; set(chatId: string, sessionId: string | undefined): void };
+  transcript?: (sessionId: string) => string | undefined; // the session's file in Claude Code, so a failed turn can be taken out
   mode: (chatId: string) => Mode;
   model: () => unknown; // read on every send, so a settings change applies to the next message
   instructions: () => string | undefined; // the user's own custom instructions file, if any
@@ -112,9 +113,6 @@ export function systemPrompt(custom?: string): string {
   return own ? `${PET_PROMPT}\n\nThe user's own instructions:\n\n${own}` : PET_PROMPT;
 }
 
-// The session id becomes a command-line argument, so only a plain UUID is ever passed on.
-const UUID = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-
 // Chat mode: no tools, and none of the user's own settings, hooks, plugins, connectors or skills.
 // Not --bare: it never reads the Pro login.
 const CHAT_ONLY = ['--tools', '', '--setting-sources', '', '--strict-mcp-config', '--disable-slash-commands'];
@@ -131,9 +129,24 @@ export function buildArgs({ mode = 'chat', sessionId, model, promptFile }: { mod
   args.push('--model', typeof model === 'string' && MODEL.test(model) ? model : DEFAULT_MODEL);
   if (mode === 'chat') args.push(...CHAT_ONLY);
   if (mode === 'chat' && promptFile) args.push('--system-prompt-file', promptFile);
-  if (sessionId && UUID.test(sessionId)) args.push('--resume', sessionId);
+  if (isSessionId(sessionId)) args.push('--resume', sessionId);
   return args;
 }
+
+// Claude Code writes the user's turn to the transcript as the turn starts, and only appends after that.
+// Cuts the file back to what it held before the turn; a file whose start changed is left alone, never corrupted.
+export function rewind(file: string, kept: Buffer): void {
+  const now = fs.readFileSync(file);
+  if (now.length > kept.length && now.subarray(0, kept.length).equals(kept)) fs.truncateSync(file, kept.length);
+}
+
+const readOrNone = (file: string | undefined): Buffer | undefined => {
+  try {
+    return file ? fs.readFileSync(file) : undefined;
+  } catch {
+    return undefined; // no transcript to take a failed turn out of
+  }
+};
 
 // Claude Code retries on its own for minutes; a blip recovers within a few retries, so more than that means offline.
 const OFFLINE_RETRIES = 3;
@@ -151,8 +164,10 @@ export class ClaudeBridge implements Bridge {
     const mode = this.opts.mode(chatId);
     fs.mkdirSync(cwd, { recursive: true });
     if (mode === 'chat') fs.writeFileSync(promptFile, systemPrompt(this.opts.instructions()));
+    const before = this.opts.sessions.get(chatId);
+    const kept = before ? readOrNone(this.opts.transcript?.(before)) : undefined;
     const args = shellArgs(
-      buildArgs({ mode, sessionId: this.opts.sessions.get(chatId), model: this.opts.model(), promptFile: path.relative(cwd, promptFile) }),
+      buildArgs({ mode, sessionId: before, model: this.opts.model(), promptFile: path.relative(cwd, promptFile) }),
       shell,
     );
     const child = spawn(file, args, { cwd, shell, windowsHide: true });
@@ -196,10 +211,32 @@ export class ClaudeBridge implements Bridge {
       if (stopped === 'timeout') throw new BridgeError(describe('timeout', ''), `no output for ${this.opts.idleMs} ms`);
       if (error) throw toBridgeError(error, code, resetsAt);
       if (code !== 0) throw toBridgeError(`claude exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}`, code, resetsAt);
+    } catch (err) {
+      if (err instanceof BridgeError && err.info.retry) this.undoTurn(chatId, before, kept);
+      throw err;
     } finally {
       clearTimeout(idle);
       signal.removeEventListener('abort', onAbort);
       killTree(child); // no-op after a normal exit; covers a caller that stops reading early
+    }
+  }
+
+  // A turn that offers Retry may already be in Claude Code's session: take it out, so Retry sends the prompt only once.
+  // Runs after the process has exited, so nothing is still writing the transcript.
+  private undoTurn(chatId: string, before: string | undefined, kept: Buffer | undefined): void {
+    try {
+      const started = this.opts.sessions.get(chatId);
+      if (before) {
+        const file = this.opts.transcript?.(before);
+        if (file && kept) rewind(file, kept);
+      } else if (started) {
+        // The chat's first turn: Retry starts a new session, and the half-made one is removed.
+        this.opts.sessions.set(chatId, undefined);
+        const file = this.opts.transcript?.(started);
+        if (file) fs.rmSync(file, { force: true });
+      }
+    } catch (err) {
+      console.error('Could not take the failed turn out of the Claude Code session:', err); // Retry then repeats the prompt, nothing worse
     }
   }
 }

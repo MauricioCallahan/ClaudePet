@@ -166,6 +166,7 @@ let chats: Chat[] = [];
 
 const workspace = path.join(app.getPath('userData'), 'workspace'); // the cwd of every claude process
 const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
+const transcriptOf = (sessionId: string) => transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, sessionId);
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -181,6 +182,7 @@ const bridge: Bridge =
             saveChats(chats);
           },
         },
+        transcript: transcriptOf,
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
         model: () => loadSettings().model,
         instructions: () => {
@@ -306,7 +308,8 @@ async function installPetFromZip(zipPath: string): Promise<void> {
   if (installing) return notify('Install in progress', 'Wait for the current pet install to finish.'); // one install at a time
   installing = true;
   try {
-    const { manifest } = await readPetZip(zipPath);
+    const read = await readPetZip(zipPath);
+    const { manifest } = read;
     const parent = pickerWindow();
     const replace = fs.existsSync(path.join(userPetsDir(), manifest.id));
     if (replace) {
@@ -314,7 +317,7 @@ async function installPetFromZip(zipPath: string): Promise<void> {
       const { response } = await (parent ? dialog.showMessageBox(parent, ask) : dialog.showMessageBox(ask));
       if (response !== 0) return;
     }
-    await installPet(zipPath, { petsDir: userPetsDir(), tmpRoot: petsTmpDir(), builtInDir: builtInPetsDir, replace });
+    await installPet(zipPath, { petsDir: userPetsDir(), tmpRoot: petsTmpDir(), builtInDir: builtInPetsDir, replace, read });
     refreshPets();
     choosePetById(manifest.id);
     openPicker();
@@ -348,15 +351,19 @@ async function deleteChat(id: string): Promise<void> {
   saveChats(chats);
   refreshTray();
   win?.webContents.send('chat:deleted', id);
-  try {
-    deleteMessages(id);
-    const transcript = chat.sessionId && transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, chat.sessionId);
-    if (transcript) {
-      fs.rmSync(transcript, { force: true });
-      fs.rmSync(transcript.slice(0, -'.jsonl'.length), { recursive: true, force: true }); // the session's side folder, if any
+  // Each file on its own, so one that is locked (antivirus, backup) does not keep the others on disk.
+  const remove = (what: string, rm: () => void) => {
+    try {
+      rm();
+    } catch (err) {
+      console.error(`Could not delete the ${what} of chat ${id}:`, err);
     }
-  } catch (err) {
-    console.error(`Could not delete the files of chat ${id}:`, err);
+  };
+  remove('messages', () => deleteMessages(id));
+  const transcript = chat.sessionId && transcriptOf(chat.sessionId);
+  if (transcript) {
+    remove('transcript', () => fs.rmSync(transcript, { force: true }));
+    remove('session folder', () => fs.rmSync(transcript.slice(0, -'.jsonl'.length), { recursive: true, force: true })); // the session's side folder, if any
   }
 }
 
@@ -487,8 +494,10 @@ if (!app.requestSingleInstanceLock()) {
       isVisible: () => !!win?.isVisible(),
       isThinking: () => !!inflight,
       // Switching chats ends the running reply so it cannot stream into the wrong chat.
-      newChat: () => {
+      // Waits for the reply to end, as openChat does: until then main would drop a message sent from the new chat.
+      newChat: async () => {
         inflight?.abort();
+        await running;
         mood.event('stop');
         showAndSend('chat:new');
       },

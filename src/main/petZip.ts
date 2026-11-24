@@ -124,8 +124,9 @@ async function extract(zipPath: string, root: string, keep: string[], dest: stri
 }
 
 // Checks the zip, unpacks it beside the pets folder and renames it into place, so a failure leaves nothing half-installed.
-export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot: string; builtInDir: string; replace?: boolean }): Promise<PetManifest> {
-  const { manifest, root } = await readPetZip(zipPath);
+// `read` is the caller's own readPetZip of this file, so what it asked the user about is what gets installed.
+export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot: string; builtInDir: string; replace?: boolean; read?: PetZip }): Promise<PetManifest> {
+  const { manifest, root } = o.read ?? (await readPetZip(zipPath));
   const keep = [root + 'pet.json', root + manifest.spritesheetPath];
   const dest = path.join(o.petsDir, manifest.id);
   if (fs.existsSync(path.join(o.builtInDir, manifest.id))) throw new Error(`"${manifest.id}" is a built-in pet`);
@@ -136,7 +137,8 @@ export async function installPet(zipPath: string, o: { petsDir: string; tmpRoot:
   try {
     const staged = path.join(tmp, 'pet');
     await extract(zipPath, root, keep, staged);
-    loadPet(staged); // the same check the scan does, on what was actually written
+    // The same check the scan does, on what was actually written; a zip swapped since it was read is refused.
+    if (loadPet(staged).manifest.id !== manifest.id) throw new Error('the zip changed while it was being installed');
     fs.mkdirSync(o.petsDir, { recursive: true });
     if (fs.existsSync(dest)) {
       const old = path.join(tmp, 'old');

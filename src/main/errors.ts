@@ -1,11 +1,13 @@
 // The failures the pet explains in plain words; everything else is shown as Claude Code reported it.
-export type ErrorCase = 'not-installed' | 'not-signed-in' | 'usage-limit' | 'network' | 'timeout' | 'unknown';
+export type ErrorCase = 'not-installed' | 'outdated' | 'not-signed-in' | 'usage-limit' | 'network' | 'timeout' | 'unknown';
 
 // Matched against Claude Code's error result, stderr and spawn errors, in this order.
 const PATTERNS: [ErrorCase, RegExp][] = [
   // 9009 / "not recognized": cmd.exe could not find the program (e.g. the .cmd shim's node is gone).
   // Only a failed spawn: an ENOENT that Claude Code itself reports is some other missing file.
   ['not-installed', /is not recognized as an internal or external command|^spawn .+ ENOENT|not installed/i],
+  // An older claude refuses a flag ClaudePet passes (its option parser prints this and exits 1).
+  ['outdated', /unknown option '--/i],
   ['not-signed-in', /not logged in|\/login|invalid api key|oauth token|authentication (required|failed)|sign in again/i],
   // Not just "limit reached": "Context limit reached" is not a usage limit.
   ['usage-limit', /usage limit|hit your (\w+ )*limit|\b(session|weekly|5-hour|opus|sonnet) limit/i],
@@ -33,6 +35,8 @@ export function describe(c: ErrorCase, detail: string, resetsAt?: number): Reply
   switch (c) {
     case 'not-installed':
       return { case: c, message: "Claude Code isn't installed. Install it, then try again:", link: INSTALL_URL };
+    case 'outdated':
+      return { case: c, message: 'Your Claude Code is too old for ClaudePet. Run `claude update` in a terminal, then try again.' };
     case 'not-signed-in':
       return { case: c, message: "You're not signed in to Claude Code. Run `claude` once in a terminal and sign in, then try again." };
     case 'usage-limit': {

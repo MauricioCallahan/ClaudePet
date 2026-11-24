@@ -6,7 +6,7 @@ import type { Bridge, ToolDone, ToolEvent, ToolUse } from './bridge';
 import { isSessionId, type Mode } from './chats';
 import { BridgeError, deniedMessage, describe, toBridgeError, type ErrorCase } from './errors';
 import { ruleFor, type ApprovalHost } from './approvals';
-import type { McpServer } from './mcpConfig';
+import { parseMcpStatus, type McpServer, type McpStatus } from './mcpConfig';
 import type { Rules, ToolSettings } from './settings';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
@@ -45,6 +45,7 @@ export interface BridgeEvent {
   tools?: ToolUse[]; // one message can start two tools at once
   done?: ToolDone[];
   sessionId?: string;
+  mcp?: McpStatus[]; // the init line's list of MCP servers and how each one started
   error?: string;
   resetsAt?: number; // the usage limit was hit; unix seconds when it resets
   offline?: number; // Claude Code is retrying a request that got no response at all: its attempt number
@@ -65,7 +66,10 @@ export function parseLine(line: string): BridgeEvent | null {
   }
   if (!v || typeof v !== 'object') return null;
   const sessionId = typeof v.session_id === 'string' ? v.session_id : undefined;
-  if (v.type === 'system' && v.subtype === 'init') return sessionId ? { sessionId } : null;
+  if (v.type === 'system' && v.subtype === 'init') {
+    const mcp = parseMcpStatus(v);
+    return sessionId || mcp ? { ...(sessionId ? { sessionId } : {}), ...(mcp ? { mcp } : {}) } : null;
+  }
   // error_status is null when no HTTP response came back; a status (429, 529) is the API, not the network.
   // attempt restarts for every request, so blips in different requests never add up.
   if (v.type === 'system' && v.subtype === 'api_retry') return v.error_status === null && typeof v.attempt === 'number' ? { offline: v.attempt } : null;
@@ -126,6 +130,7 @@ export interface ClaudeBridgeOptions {
   tools: () => ToolSettings; // read on every send, like model
   rules?: () => Rules; // approval rules, read on every send
   servers?: () => Record<string, McpServer>; // the enabled servers from mcp.json, read on every send
+  onMcpStatus?: (list: McpStatus[]) => void; // each reply's init line: how every server started
   approvals?: ApprovalHost; // without it, a tool that would ask is denied
   instructions: () => string | undefined; // the user's own custom instructions file, if any
   promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
@@ -302,6 +307,7 @@ export class ClaudeBridge implements Bridge {
         if (unanswered) error = deniedMessage(unanswered.toolName);
         if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
+        if (ev?.mcp) this.opts.onMcpStatus?.(ev.mcp);
         for (const tool of ev?.tools ?? []) yield { tool };
         for (const toolDone of ev?.done ?? []) yield { toolDone };
         if (ev?.chunk) yield ev.chunk;

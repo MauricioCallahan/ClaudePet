@@ -389,3 +389,10 @@ test('a tool the user denied reaches Claude and the reply ends normally; with no
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('parseLine: the init line carries the MCP servers and how each started, next to the session id', () => {
+  const init = { type: 'system', subtype: 'init', session_id: 's', mcp_servers: [{ name: 'echo', status: 'connected' }], mcp_server_errors: [] };
+  assert.deepEqual(parseLine(JSON.stringify(init)), { sessionId: 's', mcp: [{ name: 'echo', status: 'connected' }] });
+  assert.deepEqual(parseLine(JSON.stringify({ ...init, mcp_servers: undefined, mcp_server_errors: undefined })), { sessionId: 's' });
+  assert.equal(parseLine(JSON.stringify({ type: 'system', subtype: 'init' })), null);
+});

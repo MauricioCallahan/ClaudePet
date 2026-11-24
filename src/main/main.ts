@@ -226,11 +226,13 @@ async function runReply(id: string, text: string): Promise<void> {
   mood.event('send');
   let reply = '';
   const tools = new Map<string, SavedTool>(); // by tool id, in the order they started
+  const busy = new Set<string>(); // ids of the tools running now: the pet works until the last one is done
   try {
     for await (const ev of bridge.send(id, text, ac.signal)) {
       if (typeof ev === 'string') {
         reply += ev;
         send('reply:chunk', ev);
+        mood.event('text');
         continue;
       }
       send('reply:tool', ev);
@@ -240,9 +242,13 @@ async function runReply(id: string, text: string): Promise<void> {
         // A tool that never finishes (Stop, an error) is saved as failed.
         const t = tools.get(ev.tool.id) ?? { name, at: reply.length, isError: true };
         tools.set(ev.tool.id, { ...t, name, input: json.length > MAX_TOOL_INPUT ? undefined : input });
+        busy.add(ev.tool.id);
+        mood.event('tool');
       } else {
         const t = tools.get(ev.toolDone.id);
         if (t) t.isError = ev.toolDone.isError;
+        busy.delete(ev.toolDone.id);
+        if (!busy.size) mood.event('text');
       }
     }
     send('reply:end');

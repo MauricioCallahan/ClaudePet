@@ -136,6 +136,47 @@ test('parseLine: lines that are not reply text are ignored', () => {
   ];
   for (const line of lines) assert.equal(parseLine(line), null);
 });
+// Recorded from claude 2.1.331 with the chat flags and --tools WebSearch, and an MCP echo server (ids, usage and other fields trimmed).
+const S = '25f54293-6c62-4661-81b7-f24a0f117da0';
+const searchStart = JSON.stringify({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_01Y6', name: 'WebSearch', input: {}, caller: { type: 'direct' } } }, session_id: S });
+const searchCall = JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_01Y6', name: 'WebSearch', input: { query: 'Austin Texas current population 2026', mode: 'standard' }, caller: { type: 'direct' } }] }, parent_tool_use_id: null, session_id: S });
+const searchResult = JSON.stringify({ type: 'user', message: { role: 'user', content: [{ tool_use_id: 'toolu_01Y6', type: 'tool_result', content: 'Web search results for query: "Austin Texas current population 2026"…' }] }, parent_tool_use_id: null, session_id: S });
+const mcpCall = JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_01KF', name: 'mcp__echo__echo_text', input: { text: 'hello' } }] }, session_id: S });
+const mcpError = JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', content: 'echo is broken', is_error: true, tool_use_id: 'toolu_01Vb' }] }, session_id: S });
+
+test('parseLine: a tool start shows at once, with its input still empty', () => {
+  assert.deepEqual(parseLine(searchStart), { tools: [{ id: 'toolu_01Y6', name: 'WebSearch', input: {} }] });
+});
+test('parseLine: the assistant message gives the full tool input', () => {
+  assert.deepEqual(parseLine(searchCall), { tools: [{ id: 'toolu_01Y6', name: 'WebSearch', input: { query: 'Austin Texas current population 2026', mode: 'standard' } }] });
+  assert.deepEqual(parseLine(mcpCall), { tools: [{ id: 'toolu_01KF', name: 'mcp__echo__echo_text', input: { text: 'hello' } }] });
+});
+test('parseLine: a tool result ends the tool, as an error only when is_error is true', () => {
+  assert.deepEqual(parseLine(searchResult), { done: [{ id: 'toolu_01Y6', isError: false }] });
+  assert.deepEqual(parseLine(mcpError), { done: [{ id: 'toolu_01Vb', isError: true }] });
+});
+test('parseLine: text and a tool in one message give only the tool, since the text was streamed', () => {
+  const line = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Let me look.' }, { type: 'tool_use', id: 't1', name: 'WebFetch', input: { url: 'https://example.com' } }] } });
+  assert.deepEqual(parseLine(line), { tools: [{ id: 't1', name: 'WebFetch', input: { url: 'https://example.com' } }] });
+});
+test('parseLine: two tools or two results in one message all come back', () => {
+  const two = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'WebSearch', input: { query: 'x' } }, { type: 'tool_use', id: 'b', name: 'WebFetch', input: {} }] } });
+  assert.deepEqual(parseLine(two)?.tools?.map((t) => t.id), ['a', 'b']);
+  const done = JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a' }, { type: 'tool_result', tool_use_id: 'b', is_error: true }] } });
+  assert.deepEqual(parseLine(done), { done: [{ id: 'a', isError: false }, { id: 'b', isError: true }] });
+});
+test('parseLine: tool blocks without a string id or name, and other user or assistant shapes, are skipped', () => {
+  const lines = [
+    JSON.stringify({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'tool_use', id: 5, name: 'WebSearch' } } }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a' }, null, 'x'] } }),
+    JSON.stringify({ type: 'assistant', message: { content: 'just text' } }),
+    JSON.stringify({ type: 'assistant' }),
+    JSON.stringify({ type: 'user', message: { content: 'the prompt' } }),
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: null }, { type: 'text', text: 'x' }] } }),
+  ];
+  for (const line of lines) assert.equal(parseLine(line), null);
+  assert.deepEqual(parseLine(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'a', name: 'X' }] } })), { tools: [{ id: 'a', name: 'X', input: {} }] });
+});
 test('parseLine: a rejected rate_limit_event gives the reset time; an allowed one is ignored', () => {
   // Shape from claude 2.1.321 (other rate_limit_info fields trimmed).
   const line = (status: string) => JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { status, resetsAt: 1736985600, rateLimitType: 'five_hour' }, session_id: 's' });

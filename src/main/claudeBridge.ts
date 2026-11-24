@@ -38,13 +38,29 @@ export function readVersion(exe: string): Promise<string | undefined> {
   });
 }
 
+export interface ToolUse {
+  id: string;
+  name: string;
+  input: unknown; // {} at the start; the full input comes with the assistant message
+}
+export interface ToolDone {
+  id: string;
+  isError: boolean;
+}
+
 export interface BridgeEvent {
   chunk?: string;
+  tools?: ToolUse[]; // one message can start two tools at once
+  done?: ToolDone[];
   sessionId?: string;
   error?: string;
   resetsAt?: number; // the usage limit was hit; unix seconds when it resets
   offline?: number; // Claude Code is retrying a request that got no response at all: its attempt number
 }
+
+const toolUse = (b: any): ToolUse | undefined =>
+  typeof b?.id === 'string' && typeof b.name === 'string' ? { id: b.id, name: b.name, input: b.input ?? {} } : undefined;
+const blocks = (v: any, type: string): any[] => (Array.isArray(v.message?.content) ? v.message.content.filter((b: any) => b?.type === type) : []);
 
 // One line of `claude -p --output-format stream-json`. Anything we do not need, or cannot parse, is null.
 export function parseLine(line: string): BridgeEvent | null {
@@ -61,8 +77,25 @@ export function parseLine(line: string): BridgeEvent | null {
   // attempt restarts for every request, so blips in different requests never add up.
   if (v.type === 'system' && v.subtype === 'api_retry') return v.error_status === null && typeof v.attempt === 'number' ? { offline: v.attempt } : null;
   if (v.type === 'stream_event') {
+    // Shown as soon as Claude starts writing the call; its input is still empty here.
+    if (v.event?.type === 'content_block_start' && v.event.content_block?.type === 'tool_use') {
+      const tool = toolUse(v.event.content_block);
+      return tool ? { tools: [tool] } : null;
+    }
     const d = v.event?.delta;
     return v.event?.type === 'content_block_delta' && d?.type === 'text_delta' && typeof d.text === 'string' ? { chunk: d.text } : null;
+  }
+  // The whole message again, with each tool's full input. Its text was already streamed, so only tools count.
+  if (v.type === 'assistant') {
+    const tools = blocks(v, 'tool_use').map(toolUse).filter((t): t is ToolUse => !!t);
+    return tools.length ? { tools } : null;
+  }
+  // is_error is left out on success.
+  if (v.type === 'user') {
+    const done = blocks(v, 'tool_result')
+      .filter((b) => typeof b.tool_use_id === 'string')
+      .map((b) => ({ id: b.tool_use_id, isError: b.is_error === true }));
+    return done.length ? { done } : null;
   }
   if (v.type === 'rate_limit_event') {
     const info = v.rate_limit_info;

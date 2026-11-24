@@ -30,6 +30,7 @@ test('real Claude Code: a failed turn is taken out of the transcript and the ses
     },
     mode: () => 'chat',
     model: () => 'haiku',
+    tools: () => ({ webSearch: false, webFetch: false }),
     instructions: () => undefined,
     promptFile: path.join(dir, 'prompt.md'),
     idleMs: 120_000,

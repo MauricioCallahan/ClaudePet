@@ -8,7 +8,7 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
-import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, uiSettings } from './settings';
+import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
 import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
 import { COLUMNS, sheetUrl, type Pet } from './petFormat';
@@ -185,6 +185,7 @@ const bridge: Bridge =
         transcript: transcriptOf,
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
         model: () => loadSettings().model,
+        tools: () => toolSettings(loadSettings()),
         instructions: () => {
           try {
             return fs.readFileSync(path.join(app.getPath('userData'), 'instructions.md'), 'utf8');

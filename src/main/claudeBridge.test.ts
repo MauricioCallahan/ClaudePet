@@ -19,6 +19,21 @@ test('buildArgs turns off tools and the user setup in chat mode (the default) on
   assert.deepEqual(buildArgs({ mode: 'chat' }), chat);
   assert.ok(!buildArgs({ mode: 'code' }).includes('--tools'));
 });
+test('buildArgs passes only the web tools turned on, and allows them to run', () => {
+  const flags = (webSearch: boolean, webFetch: boolean) => {
+    const a = buildArgs({ tools: { webSearch, webFetch } });
+    return [a[a.indexOf('--tools') + 1], a.includes('--allowedTools') ? a[a.indexOf('--allowedTools') + 1] : undefined];
+  };
+  assert.deepEqual(flags(false, false), ['', undefined]);
+  assert.deepEqual(flags(true, false), ['WebSearch', 'WebSearch']);
+  assert.deepEqual(flags(false, true), ['WebFetch', 'WebFetch']);
+  assert.deepEqual(flags(true, true), ['WebSearch,WebFetch', 'WebSearch,WebFetch']);
+  assert.deepEqual(buildArgs({ tools: { webSearch: false, webFetch: false } }), buildArgs());
+});
+test('buildArgs leaves tools to the user setup in code mode', () => {
+  const code = buildArgs({ mode: 'code', tools: { webSearch: true, webFetch: true } });
+  assert.ok(!code.includes('--tools') && !code.includes('--allowedTools'));
+});
 test('buildArgs passes the model from settings, or sonnet when it is missing or unsafe', () => {
   const model = (m?: unknown) => {
     const a = buildArgs({ model: m });
@@ -163,6 +178,7 @@ test('a turn that ends with Retry offered is taken out of the session, so Retry 
     transcript: () => transcript,
     mode: () => 'chat',
     model: () => undefined,
+    tools: () => ({ webSearch: false, webFetch: false }),
     instructions: () => undefined,
     promptFile: path.join(dir, 'prompt.md'),
     idleMs: 30_000,

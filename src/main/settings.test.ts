@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PET_ID, parseSettings, petSettings, toolSettings, uiSettings } from './settings';
+import { approvalRules, DEFAULT_PET_ID, parseSettings, petSettings, toolSettings, uiSettings } from './settings';
 
 test('returns a valid settings object', () => {
   assert.deepEqual(parseSettings('{"x":1,"y":2}'), { x: 1, y: 2 });
@@ -54,4 +54,15 @@ test('a tools setting that is not an object leaves the web tools on', () => {
 });
 test('webSearch false turns off search only', () => {
   assert.deepEqual(toolSettings({ tools: { webSearch: false } }), { webSearch: false, webFetch: true });
+});
+
+test('approval rules keep plain tool names with allow, ask or deny', () => {
+  const rules = { WebFetch: 'ask', mcp__github: 'allow', mcp__github__create_issue: 'deny' };
+  assert.deepEqual(approvalRules({ tools: { approval: rules } }), rules);
+  assert.deepEqual(approvalRules({}), {});
+});
+test('approval rules drop unsafe names and unknown values, and a bad approval setting gives none', () => {
+  const bad = { 'Web Fetch': 'allow', 'x & calc': 'allow', '--dangerously-skip-permissions': 'allow', '': 'allow', WebSearch: 'yes', Bash: true, WebFetch: 'ask' };
+  assert.deepEqual(approvalRules({ tools: { approval: bad } }), { WebFetch: 'ask' });
+  for (const approval of ['ask', null, ['WebFetch'], 5]) assert.deepEqual(approvalRules({ tools: { approval } }), {});
 });

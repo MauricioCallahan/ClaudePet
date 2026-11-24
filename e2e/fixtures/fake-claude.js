@@ -40,6 +40,53 @@ process.stdin.on('end', () => {
     })();
     return;
   }
+  // "/approve WebFetch [Bash]": Claude calls these tools at once, asking through the approval server from --mcp-config the
+  // way claude does (MCP over stdio). Without it, like --permission-prompts none, each call is denied unanswered.
+  if (prompt.startsWith('/approve')) {
+    const names = prompt.split(/\s+/).slice(1).filter(Boolean);
+    const tools = (names.length ? names : ['WebFetch']).map((name, i) => ({ id: `toolu_ap${i}`, name, input: name === 'WebFetch' ? { url: 'https://example.com', prompt: 'x' } : { command: 'dir' } }));
+    for (const t of tools) out({ type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: t.id, name: t.name, input: {} } }, session_id });
+    out({ type: 'assistant', message: { role: 'assistant', content: tools.map((t) => ({ type: 'tool_use', ...t })) }, session_id });
+    const config = args.includes('--mcp-config') ? JSON.parse(fs.readFileSync(args[args.indexOf('--mcp-config') + 1], 'utf8')).mcpServers.claudepet : undefined;
+    const finish = (answers) => {
+      const denials = [];
+      tools.forEach((t, i) => {
+        const a = answers[i];
+        if (a.behavior !== 'allow') denials.push({ tool_name: t.name, tool_use_id: t.id, tool_input: t.input });
+        out({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: t.id, content: a.behavior === 'allow' ? 'ok' : a.message, ...(a.behavior === 'allow' ? {} : { is_error: true }) }] }, session_id });
+      });
+      const text = answers.map((a, i) => `${tools[i].name}: ${a.behavior === 'allow' ? 'ran' : `denied (${a.message})`}`).join('; ');
+      say(text);
+      out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id, permission_denials: denials });
+    };
+    if (!config) {
+      finish(tools.map(() => ({ behavior: 'deny', message: 'denied' })));
+      return;
+    }
+    const { spawn } = require('node:child_process');
+    const server = spawn(config.command, config.args, { env: { ...process.env, ...config.env }, stdio: ['pipe', 'pipe', 'inherit'] });
+    const waiting = new Map();
+    let next = 1;
+    require('node:readline').createInterface({ input: server.stdout }).on('line', (l) => {
+      const m = JSON.parse(l);
+      waiting.get(m.id)?.(m);
+    });
+    const call = (method, params) => new Promise((resolve) => {
+      const id = next++;
+      waiting.set(id, resolve);
+      server.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+    });
+    (async () => {
+      await call('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'fake-claude', version: '1' } });
+      server.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+      const answers = await Promise.all(
+        tools.map(async (t) => JSON.parse((await call('tools/call', { name: 'approve', arguments: { tool_name: t.name, input: t.input, tool_use_id: t.id } })).result.content[0].text)),
+      );
+      server.stdin.end();
+      finish(answers);
+    })();
+    return;
+  }
   if (prompt.startsWith('/deny')) {
     const tool = prompt.split(/\s+/)[1] || 'Bash'; // "/deny WebFetch" denies that tool
     say('I need to use a tool.');

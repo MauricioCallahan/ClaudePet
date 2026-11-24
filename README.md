@@ -81,13 +81,23 @@ Rows, top to bottom, with Codex's frame counts and per-frame timings:
 | 3 | waving | 4 | 140 each, last 280 | once | replied |
 | 4 | jumping | 5 | 140 each, last 280 | once | |
 | 5 | failed | 8 | 140 each, last 240 | once | error |
-| 6 | waiting | 6 | 150 each, last 260 | loop | |
+| 6 | waiting | 6 | 150 each, last 260 | loop | waiting (Claude asks you to allow a tool) |
 | 7 | running | 6 | 120 each, last 220 | loop | thinking |
 | 8 | review | 6 | 150 each, last 280 | loop | |
 | 9 | look directions, 0-157.5° | 8 | still poses | | |
 | 10 | look directions, 180-337.5° | 8 | still poses | | |
 
 Rows 9 and 10 exist only in v2 sheets: sixteen still poses looking clockwise from up, used by Codex to follow the pointer. "running" (row 7) means thinking and "running-right" (row 1) means using a tool, not literal running. The first idle frame (the top-left cell) is the pet's still picture, used for previews and when reduced motion is on.
+
+## Tool approvals
+
+Web search and web fetch run without asking. Any other tool Claude wants to use in a pet chat shows a card above the input: **Allow once**, **Allow for this chat** (until ClaudePet quits) or **Deny**. Enter allows once and Esc denies. While a card is open the pet waits, and if the box is hidden a tray message says Claude is waiting. A card with no answer after 5 minutes is denied, as are open cards when you press Stop, start a new chat or quit. A tool you or a rule deny never fails the reply: Claude is told and carries on.
+
+Rules in `%APPDATA%\ClaudePet\settings.json` decide before any card shows. A rule is `"allow"`, `"ask"` or `"deny"`, for one tool or, with `mcp__<server>`, for every tool of an MCP server:
+
+```json
+{ "tools": { "approval": { "WebFetch": "ask", "mcp__github": "allow", "mcp__github__create_issue": "ask" } } }
+```
 
 ## Known issues
 - The chat box opens as a small bar under the pet and grows into the chat as you talk. If you prefer the full-size box, set `"ui": { "compact": false }` in `%APPDATA%\ClaudePet\settings.json` and restart.

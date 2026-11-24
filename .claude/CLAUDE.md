@@ -10,19 +10,22 @@ At the beginning of each new session, include the phrase "Project context verifi
 - Each milestone in ROADMAP.md has main bullets. Break every bullet into 5 tasks.
 - Number tasks as M<milestone>-<bullet>.<task> (e.g. M1-3.2 = milestone 1, bullet 3, task 2).
 - Task lists live in docs/milestone-<N>.md (ROADMAP.md has the overview). Tick tasks off as they land.
+- When asked to plan a GitHub issue, write the plan to docs/issues/issue-<number>-<short-name>.md (e.g. `issue-24-concise-deny.md`). The folder holds only plans for planned issues.
 
 ### Branching
 - `production` is the default branch: released milestones only. `development` collects finished bullets.
 - Start every bullet on a new branch from an up-to-date `development`, named `m<milestone>-<bullet>-<short-name>` (e.g. `m1-3-hotkey`). Never commit directly to `development` or `production`.
 - Fold a fix for the current task into that task's commit (`git commit --amend`, or `git commit --fixup` + `git rebase -i --autosquash` before pushing). No separate "fix build" commits.
 - When the bullet is reviewed and all findings are resolved, push the branch and open a PR into `development` titled `M1-3: <bullet summary>`. I merge it with **Squash and merge**; do not merge it yourself.
+- Attribution goes in once. Task and review commits carry **no** `Co-Authored-By` line (squash merge would repeat it once per commit). The PR description ends with one note naming Claude and the current model, in the usual trailer form (`Co-Authored-By: Claude <model> <noreply@anthropic.com>`), and nothing else for attribution. The squash message uses the PR title and description, so it lands once at the bottom.
+- PR description format: one line per commit, `- M1-3.2: <what it does, one short sentence>` (the review commit gets one line plus its findings), then a blank line, then the single Claude/model note last.
 - At the end of a milestone, open a PR from `development` into `production` and tag the merge (e.g. `v0.1-m1`) after I merge it.
 
 ### Per task
 1. Plan it (see Plan).
 2. Implement only that task.
 3. Verify (see Check): `npm test` passes (it also builds), plus `npm run lint` once it exists (M3-3.2), and the task's "done when" check works.
-4. Commit once per task: `M1-3.2: <short summary>`.
+4. Commit once per task: `M1-3.2: <short summary>`. The summary is the concise definition of the task; no `Co-Authored-By` trailer (see Branching).
 5. Do NOT run /ponytail-review here. Go straight to the next task.
 
 

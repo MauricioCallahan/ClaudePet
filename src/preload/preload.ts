@@ -47,6 +47,13 @@ contextBridge.exposeInMainWorld('pet', {
   onReplyTool: (cb: (event: unknown) => void): void => {
     ipcRenderer.on('reply:tool', (_e, event: unknown) => cb(event));
   },
+  // The approval card: main shows one (or null for none), the box answers it by id.
+  onApproval: (cb: (card: unknown) => void): void => {
+    ipcRenderer.on('approval:show', (_e, card: unknown) => cb(card));
+  },
+  answerApproval: (id: string, answer: 'once' | 'chat' | 'deny'): void => {
+    ipcRenderer.send('approval:answer', id, answer);
+  },
   onReplyEnd: (cb: () => void): void => {
     ipcRenderer.on('reply:end', () => cb());
   },

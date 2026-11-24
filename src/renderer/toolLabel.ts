@@ -1,9 +1,11 @@
-// What a tool activity line says while the tool runs, after it finished, and when it failed.
+// What a tool activity line says while the tool runs, after it finished, and when it failed; ask follows
+// "Claude wants to" on the approval card.
 // Plain text: the renderer only ever sets it with textContent, so an input holding HTML stays literal.
 export interface ToolLabel {
   running: string;
   done: string;
   failed: string;
+  ask: string;
 }
 
 const MAX = 60;
@@ -36,18 +38,18 @@ export function toolLabel(name: string, input: unknown): ToolLabel {
   if (name === 'WebSearch') {
     const query = short(field(input, 'query') ?? '');
     const what = query ? ` for "${query}"` : '';
-    return { running: `Searching the web${what}…`, done: `Searched the web${what}`, failed: 'Web search failed' };
+    return { running: `Searching the web${what}…`, done: `Searched the web${what}`, failed: 'Web search failed', ask: `search the web${what}` };
   }
   if (name === 'WebFetch') {
     const site = host(field(input, 'url'));
-    return { running: `Reading ${site}…`, done: `Read ${site}`, failed: `Couldn't read ${site}` };
+    return { running: `Reading ${site}…`, done: `Read ${site}`, failed: `Couldn't read ${site}`, ask: `read ${site}` };
   }
   // mcp__<server>__<tool>: the server name ends at the first "__".
   const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
   if (mcp) {
     const label = short(`${words(mcp[1])}: ${mcp[2].replace(/_/g, ' ').trim()}`);
-    return { running: `${label}…`, done: label, failed: `${label} failed` };
+    return { running: `${label}…`, done: label, failed: `${label} failed`, ask: `use ${label}` };
   }
   const tool = short(name);
-  return { running: `Using ${tool}…`, done: `Used ${tool}`, failed: `${tool} failed` };
+  return { running: `Using ${tool}…`, done: `Used ${tool}`, failed: `${tool} failed`, ask: `use ${tool}` };
 }

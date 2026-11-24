@@ -8,7 +8,8 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
-import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
+import { approvalRules, DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
+import { ApprovalPipe, Approvals } from './approvals';
 import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
 import { COLUMNS, sheetUrl, type Pet } from './petFormat';
@@ -167,6 +168,20 @@ let chats: Chat[] = [];
 const workspace = path.join(app.getPath('userData'), 'workspace'); // the cwd of every claude process
 const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
 const transcriptOf = (sessionId: string) => transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, sessionId);
+// Claude Code starts the approval server as this same executable in Node mode (no separate Node needed).
+const approvalPipe = new ApprovalPipe();
+let shownCard: string | undefined; // the card on screen, so a repeat of it does not balloon again
+const approvals = new Approvals(
+  approvalPipe,
+  { command: process.execPath, args: [path.join(__dirname, '../approval/server.js')] },
+  (card) => {
+    win?.webContents.send('approval:show', card ?? null);
+    if (card && card.id !== shownCard && !win?.isVisible()) notify('Claude is waiting', 'Claude wants to use a tool. Open ClaudePet to allow or deny it.');
+    mood.event(card ? 'ask' : 'answer');
+    shownCard = card?.id;
+  },
+  { rules: () => approvalRules(loadSettings()) },
+);
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -186,6 +201,9 @@ const bridge: Bridge =
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
         model: () => loadSettings().model,
         tools: () => toolSettings(loadSettings()),
+        rules: () => approvalRules(loadSettings()),
+        approvals,
+        runConfigFile: path.join(app.getPath('userData'), 'mcp-run.json'),
         instructions: () => {
           try {
             return fs.readFileSync(path.join(app.getPath('userData'), 'instructions.md'), 'utf8');
@@ -384,6 +402,7 @@ async function deleteChat(id: string): Promise<void> {
       console.error(`Could not delete the ${what} of chat ${id}:`, err);
     }
   };
+  approvals.forget(id);
   remove('messages', () => deleteMessages(id));
   const transcript = chat.sessionId && transcriptOf(chat.sessionId);
   if (transcript) {
@@ -440,6 +459,8 @@ if (!app.requestSingleInstanceLock()) {
     if (!claude) console.log('Claude Code: not installed');
     else void readVersion(claude).then((v) => console.log(`Claude Code: ${claude} (${v ?? 'unknown version'})`));
     chats = loadChats();
+    // Without the pipe every approval request is denied (the server cannot reach main), so nothing hangs.
+    approvalPipe.listen().catch((err) => console.error('Could not open the approval pipe:', err));
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown, retry: unknown) => {
       if (!isChatId(id) || typeof text !== 'string') return;
@@ -462,6 +483,10 @@ if (!app.requestSingleInstanceLock()) {
       if (typeof text === 'string' && text.length <= 1_000_000) clipboard.writeText(text);
     });
     ipcMain.on('chat:stop', () => inflight?.abort());
+    // Only the box may answer, and only the card it is showing (checked in Approvals.answer).
+    ipcMain.on('approval:answer', (e, card: unknown, answer: unknown) => {
+      if (win && e.sender === win.webContents) approvals.answer(card, answer);
+    });
     ipcMain.on('chat:open', (_e, id: unknown) => {
       if (isChatId(id)) void openChat(id);
     });
@@ -541,6 +566,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     isQuitting = true;
     inflight?.abort(); // kills a running claude process so none outlives the app
+    approvalPipe.dispose();
     destroyTray();
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());

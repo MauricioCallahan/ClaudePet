@@ -35,6 +35,15 @@ form button { padding: 0 12px; cursor: pointer; }
 @keyframes tool-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tool.running::before { animation: none; border-color: #888; } }
 .msg:hover .copy-reply, .copy-reply:focus-visible { opacity: 1; }
+/* The approval card: above the input, in both boxes. Its text is Claude's tool input, set with textContent only. */
+#approval { margin: 0 8px 8px; padding: 8px 10px; border: 1px solid #ccc; border-radius: 10px; background: #fafafa; font-size: 13px; }
+#approval p { display: inline; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+#approval-count { float: right; color: #888; font-size: 11px; }
+#approval-details { display: block; margin-top: 4px; padding: 0; border: 0; background: none; color: #555; font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+#approval-input { max-height: 120px; overflow: auto; margin: 4px 0 0; padding: 6px; border-radius: 6px; background: #eee; font: 11px Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+#approval .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+#approval .actions button { padding: 3px 10px; cursor: pointer; font: inherit; }
+#approval .actions [data-answer="once"] { font-weight: 600; }
 #chats { flex: 1; overflow-y: auto; padding: 8px; }
 #search { width: 100%; box-sizing: border-box; font: inherit; padding: 4px 6px; margin-bottom: 6px; }
 #chat-list { list-style: none; margin: 0; padding: 0; }
@@ -63,8 +72,8 @@ form button { padding: 0 12px; cursor: pointer; }
 body[data-mode] { background: transparent; border: 0; }
 body[data-mode] #box { position: absolute; inset: var(--margin); height: auto; }
 body[data-mode] header { display: none; }
-body[data-mode="collapsed"] :is(#messages, #chats, #thinking),
-body[data-mode="compose"] :is(#messages, #chats, #thinking) { display: none; }
+body[data-mode="collapsed"] :is(#messages, #chats, #thinking, #approval),
+body[data-mode="compose"] :is(#messages, #chats, #thinking, #approval) { display: none; }
 /* One element is both the pill and the input bar; it sits at the bottom center, so it grows sideways and upward. */
 body[data-mode] #bar { position: relative; flex: none; margin-top: auto; align-self: center; width: var(--pill-w); height: var(--pill-h); border-radius: calc(var(--pill-h) / 2); background: var(--surface); box-shadow: var(--shadow); overflow: hidden; }
 body[data-mode] .pill { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 6px; }

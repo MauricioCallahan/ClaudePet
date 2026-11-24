@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { buildArgs, ClaudeBridge, command, findClaude, parseLine, PET_PROMPT, rewind, shellArgs, systemPrompt } from './claudeBridge';
+import { buildArgs, chatTools, ClaudeBridge, command, findClaude, parseLine, PET_PROMPT, rewind, shellArgs, systemPrompt, writeRunConfig } from './claudeBridge';
 import { BridgeError } from './errors';
 
 test('buildArgs resumes only with a well-formed session id', () => {
@@ -111,14 +111,53 @@ test('parseLine: an error result carries the message and no session id', () => {
   assert.deepEqual(parseLine(line), { error: 'Invalid API key · Please run /login' });
   assert.deepEqual(parseLine('{"type":"result","subtype":"error_during_execution","is_error":true}'), { error: 'Claude Code reported an error.' });
 });
-test('parseLine: a denied tool ends the reply with an error, even though the result says success', () => {
+test('parseLine: a result lists every denied tool with its id, even though it says success', () => {
   // Recorded from claude 2.1.321 with --permission-prompts none (usage and other fields trimmed).
   const line = JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'The command was blocked.', session_id: '6c0baf1c-cc0a-4f43-8d71-1194d5c4a136', permission_denials: [{ tool_name: 'Bash', tool_use_id: 'toolu_01', tool_input: { command: 'echo hi > x.txt' } }] });
-  assert.deepEqual(parseLine(line), { error: 'Claude Code asked to use Bash, but tools are off in pet chats.' });
+  assert.deepEqual(parseLine(line), { denied: [{ toolName: 'Bash', id: 'toolu_01' }] });
+  const odd = JSON.stringify({ type: 'result', is_error: false, permission_denials: [{ tool_name: 'WebFetch', tool_use_id: 'a' }, { tool_name: 5 }, null] });
+  assert.deepEqual(parseLine(odd), { denied: [{ toolName: 'WebFetch', id: 'a' }, { toolName: 'a tool' }] });
   assert.deepEqual(parseLine(JSON.stringify({ type: 'result', is_error: false, permission_denials: [], session_id: 's' })), { sessionId: 's' });
 });
-test('buildArgs never lets a permission prompt wait for an answer, in any mode', () => {
+test('parseLine: a failed turn that also lists denials keeps its error', () => {
+  const line = JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'API Error: 500', permission_denials: [{ tool_name: 'WebFetch', tool_use_id: 'a' }] });
+  assert.deepEqual(parseLine(line), { denied: [{ toolName: 'WebFetch', id: 'a' }], error: 'API Error: 500' });
+});
+test('buildArgs never lets a permission prompt wait for an answer without the approval tool, in any mode', () => {
   for (const mode of ['chat', 'code'] as const) assert.equal(buildArgs({ mode }).join(' ').includes('--permission-prompts none'), true);
+  assert.equal(buildArgs({ mode: 'code', approvals: 'x.json' }).join(' ').includes('--permission-prompts none'), true); // code mode keeps the user's setup
+});
+test('buildArgs with approvals asks through the approval tool instead of denying', () => {
+  const file = path.join('..', 'mcp-run.json');
+  const a = buildArgs({ approvals: file });
+  assert.ok(!a.includes('--permission-prompts'));
+  assert.equal(a[a.indexOf('--mcp-config') + 1], file);
+  assert.equal(a[a.indexOf('--permission-prompt-tool') + 1], 'mcp__claudepet__approve');
+  assert.ok(a.includes('--strict-mcp-config')); // still nothing from the user's own MCP setup
+  assert.ok(!buildArgs({ mode: 'code', approvals: file }).includes('--mcp-config'));
+  assert.ok(!buildArgs().includes('--mcp-config') && !buildArgs().includes('--permission-prompt-tool'));
+});
+test('a web tool with an ask or deny rule is offered but not allowed, so it goes to the approval tool', () => {
+  const both = { webSearch: true, webFetch: true };
+  assert.deepEqual(chatTools(both), { on: ['WebSearch', 'WebFetch'], allowed: ['WebSearch', 'WebFetch'] });
+  assert.deepEqual(chatTools(both, { WebFetch: 'ask' }), { on: ['WebSearch', 'WebFetch'], allowed: ['WebSearch'] });
+  assert.deepEqual(chatTools(both, { WebSearch: 'deny', WebFetch: 'ask' }).allowed, []);
+  const a = buildArgs({ tools: both, rules: { WebFetch: 'ask' }, approvals: 'r.json' });
+  assert.equal(a[a.indexOf('--tools') + 1], 'WebSearch,WebFetch');
+  assert.equal(a[a.indexOf('--allowedTools') + 1], 'WebSearch');
+  assert.ok(!buildArgs({ tools: both, rules: { WebSearch: 'ask', WebFetch: 'ask' } }).includes('--allowedTools'));
+});
+test('writeRunConfig holds only the approval server, in Node mode, with its env', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-run-'));
+  try {
+    const f = path.join(dir, 'mcp-run.json');
+    writeRunConfig(f, { command: 'C:\Program Files\ClaudePet\ClaudePet.exe', args: ['server.js'] }, { CLAUDEPET_PIPE: 'p', CLAUDEPET_TOKEN: 't' });
+    assert.deepEqual(JSON.parse(fs.readFileSync(f, 'utf8')), {
+      mcpServers: { claudepet: { type: 'stdio', command: 'C:\Program Files\ClaudePet\ClaudePet.exe', args: ['server.js'], env: { ELECTRON_RUN_AS_NODE: '1', CLAUDEPET_PIPE: 'p', CLAUDEPET_TOKEN: 't' } } },
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 test('parseLine: truncated or non-JSON lines are ignored, not thrown', () => {
   for (const line of [delta('cut off').slice(0, 60), '', 'Warning: something on stdout', 'null', '5', '"text"']) assert.equal(parseLine(line), null);
@@ -255,6 +294,41 @@ test('a turn that ends with Retry offered is taken out of the session, so Retry 
   } finally {
     delete process.env.FAKE_TRANSCRIPT;
     delete process.env.FAKE_OFFLINE_FILE;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The fake claude's "/approve" asks through the approval server from mcp-run.json, like claude does.
+test('a tool the user denied reaches Claude and the reply ends normally; with no approval tool it is an error', async () => {
+  const { ApprovalPipe, Approvals, DENIED } = await import('./approvals');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-approve-'));
+  const pipe = new ApprovalPipe();
+  await pipe.listen();
+  const approvals = new Approvals(pipe, { command: process.execPath, args: [path.resolve('dist/approval/server.js')] }, (card) => card && approvals.answer(card.id, 'deny'), { rules: () => ({ WebFetch: 'ask' }) });
+  const bridge = (withApprovals: boolean) =>
+    new ClaudeBridge({
+      exe: () => path.resolve('e2e/fixtures/fake-claude.cmd'),
+      cwd: path.join(dir, 'workspace'),
+      sessions: { get: () => undefined, set: () => {} },
+      mode: () => 'chat',
+      model: () => undefined,
+      tools: () => ({ webSearch: true, webFetch: true }),
+      rules: () => ({ WebFetch: 'ask' }),
+      ...(withApprovals ? { approvals, runConfigFile: path.join(dir, 'mcp-run.json') } : {}),
+      instructions: () => undefined,
+      promptFile: path.join(dir, 'prompt.md'),
+      idleMs: 30_000,
+    });
+  const run = async (b: ClaudeBridge) => {
+    let text = '';
+    for await (const ev of b.send('c', '/approve WebFetch', new AbortController().signal)) if (typeof ev === 'string') text += ev;
+    return text;
+  };
+  try {
+    assert.equal(await run(bridge(true)), `WebFetch: denied (${DENIED})`);
+    await assert.rejects(run(bridge(false)), /Web fetch is off/);
+  } finally {
+    pipe.dispose();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

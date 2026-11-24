@@ -1,11 +1,12 @@
-import { execFile, spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { execFile, spawn, spawnSync, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import type { Bridge, ToolDone, ToolEvent, ToolUse } from './bridge';
 import { isSessionId, type Mode } from './chats';
 import { BridgeError, deniedMessage, describe, toBridgeError, type ErrorCase } from './errors';
-import type { ToolSettings } from './settings';
+import { ruleFor, type ApprovalHost } from './approvals';
+import type { Rules, ToolSettings } from './settings';
 
 // Finds the claude executable: the CLAUDEPET_CLAUDE override, then PATH, then the usual install locations.
 export function findClaude(env: NodeJS.ProcessEnv, exists: (file: string) => boolean, home: string): string | undefined {
@@ -46,6 +47,7 @@ export interface BridgeEvent {
   error?: string;
   resetsAt?: number; // the usage limit was hit; unix seconds when it resets
   offline?: number; // Claude Code is retrying a request that got no response at all: its attempt number
+  denied?: { toolName: string; id?: string }[]; // tools Claude Code did not run; the bridge decides which are errors
 }
 
 const toolUse = (b: any): ToolUse | undefined =>
@@ -92,11 +94,11 @@ export function parseLine(line: string): BridgeEvent | null {
     return info?.status === 'rejected' && typeof info.resetsAt === 'number' ? { resetsAt: info.resetsAt } : null;
   }
   if (v.type === 'result') {
-    // Reported as a success, but a denied tool means the reply is not what was asked for.
-    const denied = Array.isArray(v.permission_denials) ? v.permission_denials[0] : undefined;
-    if (denied) {
-      return { error: deniedMessage(typeof denied.tool_name === 'string' ? denied.tool_name : 'a tool') };
-    }
+    // Reported as a success; a denial nobody answered (a tool that is off) means the reply is not what was asked for.
+    const denied = (Array.isArray(v.permission_denials) ? v.permission_denials : [])
+      .filter((d: any) => d && typeof d === 'object')
+      .map((d: any) => ({ toolName: typeof d.tool_name === 'string' ? d.tool_name : 'a tool', ...(typeof d.tool_use_id === 'string' ? { id: d.tool_use_id } : {}) }));
+    if (denied.length) return { denied };
     if (!v.is_error) return sessionId ? { sessionId } : null;
     return { error: typeof v.result === 'string' && v.result ? v.result : 'Claude Code reported an error.' };
   }
@@ -119,8 +121,11 @@ export interface ClaudeBridgeOptions {
   mode: (chatId: string) => Mode;
   model: () => unknown; // read on every send, so a settings change applies to the next message
   tools: () => ToolSettings; // read on every send, like model
+  rules?: () => Rules; // approval rules, read on every send
+  approvals?: ApprovalHost; // without it, a tool that would ask is denied
   instructions: () => string | undefined; // the user's own custom instructions file, if any
   promptFile: string; // where chat mode writes the system prompt; must sit outside cwd so cwd stays empty
+  runConfigFile?: string; // where chat mode writes mcp-run.json when a tool can ask; outside cwd, like promptFile
   idleMs: number; // no output for this long ends the reply as a timeout
 }
 
@@ -149,27 +154,51 @@ const WEB_TOOLS: Record<keyof ToolSettings, string> = { webSearch: 'WebSearch', 
 const MODEL = /^[A-Za-z0-9][\w.\-[\]]*$/;
 const DEFAULT_MODEL = 'sonnet';
 
-// promptFile is relative to cwd: an absolute path could hold spaces (a username), which break the shell command line.
+// The tools a chat offers, and those of them that run without asking.
+export function chatTools(tools: ToolSettings | undefined, rules: Rules = {}): { on: string[]; allowed: string[] } {
+  const on = (Object.keys(WEB_TOOLS) as (keyof ToolSettings)[]).filter((k) => tools?.[k] === true).map((k) => WEB_TOOLS[k]);
+  return { on, allowed: on.filter((n) => ruleFor(n, rules) === 'allow') };
+}
+
+// The approval server's tool, as named in mcp-run.json; Claude Code calls it before any tool that would ask.
+export const APPROVE_TOOL = 'mcp__claudepet__approve';
+
+// promptFile and approvals (mcp-run.json) are relative to cwd: an absolute path could hold spaces (a username), which
+// break the shell command line.
 export function buildArgs({
   mode = 'chat',
   sessionId,
   model,
   promptFile,
   tools,
-}: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string; tools?: ToolSettings } = {}): string[] {
+  rules,
+  approvals,
+}: { mode?: Mode; sessionId?: string; model?: unknown; promptFile?: string; tools?: ToolSettings; rules?: Rules; approvals?: string } = {}): string[] {
+  const asking = mode === 'chat' && !!approvals;
   // --verbose is required for stream-json in print mode; partial messages give text as it is written.
-  // --permission-prompts none: the process is hidden, so anything that would ask for permission is denied, never left waiting.
-  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-prompts', 'none'];
+  // --permission-prompts none: the process is hidden, so without the approval tool anything that would ask is denied, never left waiting.
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', ...(asking ? [] : ['--permission-prompts', 'none'])];
   args.push('--model', typeof model === 'string' && MODEL.test(model) ? model : DEFAULT_MODEL);
   if (mode === 'chat') {
-    const on = (Object.keys(WEB_TOOLS) as (keyof ToolSettings)[]).filter((k) => tools?.[k] === true).map((k) => WEB_TOOLS[k]).join(',');
-    args.push('--tools', on, ...CHAT_ONLY);
-    // The process is hidden and can't ask, so a tool turned on must also be allowed to run.
-    if (on) args.push('--allowedTools', on);
+    const { on, allowed } = chatTools(tools, rules);
+    args.push('--tools', on.join(','), ...CHAT_ONLY);
+    // Allowed tools run without asking; the rest go to the approval tool, or are denied without it.
+    if (allowed.length) args.push('--allowedTools', allowed.join(','));
+    if (asking) args.push('--mcp-config', approvals, '--permission-prompt-tool', APPROVE_TOOL);
   }
   if (mode === 'chat' && promptFile) args.push('--system-prompt-file', promptFile);
   if (isSessionId(sessionId)) args.push('--resume', sessionId);
   return args;
+}
+
+// Above ClaudePet's own 5-minute deny, so an open card always gets its answer from ClaudePet.
+export const MCP_TOOL_TIMEOUT_MS = 6 * 60_000;
+
+// mcp-run.json, written on every send that can ask: only the approval server, so --strict-mcp-config loads nothing else.
+// It holds this reply's one-time token, which stops working when the reply ends.
+export function writeRunConfig(file: string, server: { command: string; args: string[] }, env: Record<string, string>): void {
+  const config = { mcpServers: { claudepet: { type: 'stdio', command: server.command, args: server.args, env: { ELECTRON_RUN_AS_NODE: '1', ...env } } } };
+  fs.writeFileSync(file, JSON.stringify(config, null, 2));
 }
 
 // Claude Code writes the user's turn to the transcript as the turn starts, and only appends after that.
@@ -205,11 +234,23 @@ export class ClaudeBridge implements Bridge {
     if (mode === 'chat') fs.writeFileSync(promptFile, systemPrompt(this.opts.instructions()));
     const before = this.opts.sessions.get(chatId);
     const kept = before ? readOrNone(this.opts.transcript?.(before)) : undefined;
-    const args = shellArgs(
-      buildArgs({ mode, sessionId: before, model: this.opts.model(), tools: this.opts.tools(), promptFile: path.relative(cwd, promptFile) }),
-      shell,
-    );
-    const child = spawn(file, args, { cwd, shell, windowsHide: true });
+    const tools = this.opts.tools();
+    const rules = this.opts.rules?.() ?? {};
+    const { on, allowed } = chatTools(tools, rules);
+    // The approval server runs only when some tool on can ask (or is denied by a rule, which the server answers).
+    const { approvals, runConfigFile } = this.opts;
+    const session = mode === 'chat' && approvals && runConfigFile && on.length > allowed.length ? approvals.begin(chatId) : undefined;
+    let child: ChildProcessWithoutNullStreams;
+    try {
+      if (session) writeRunConfig(runConfigFile!, approvals!.server, session.env);
+      const args = buildArgs({ mode, sessionId: before, model: this.opts.model(), tools, rules, promptFile: path.relative(cwd, promptFile), approvals: session && path.relative(cwd, runConfigFile!) });
+      // Claude Code's own MCP tool timeout must not fire before ClaudePet answers an open card.
+      const env = session ? { ...process.env, MCP_TOOL_TIMEOUT: String(MCP_TOOL_TIMEOUT_MS) } : process.env;
+      child = spawn(file, shellArgs(args, shell), { cwd, shell, windowsHide: true, env });
+    } catch (err) {
+      session?.end();
+      throw err;
+    }
     let stderr = '';
     child.stderr.on('data', (d) => (stderr = (stderr + d).slice(-2000)));
     const exit = new Promise<number | null>((resolve, reject) => {
@@ -240,6 +281,9 @@ export class ClaudeBridge implements Bridge {
           break;
         }
         if (ev?.error) error = ev.error;
+        // A denial the user or a rule gave reached Claude as the tool's error, and Claude carried on.
+        const unanswered = ev?.denied?.find((d) => !d.id || !session?.answered.has(d.id));
+        if (unanswered) error = deniedMessage(unanswered.toolName);
         if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
         for (const tool of ev?.tools ?? []) yield { tool };
@@ -259,6 +303,7 @@ export class ClaudeBridge implements Bridge {
       clearTimeout(idle);
       signal.removeEventListener('abort', onAbort);
       killTree(child); // no-op after a normal exit; covers a caller that stops reading early
+      session?.end(); // its token stops working, and any card still open is answered deny
     }
   }
 

@@ -8,7 +8,8 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
-import { DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
+import { approvalRules, DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
+import { ApprovalPipe, Approvals } from './approvals';
 import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
 import { COLUMNS, sheetUrl, type Pet } from './petFormat';
@@ -167,6 +168,12 @@ let chats: Chat[] = [];
 const workspace = path.join(app.getPath('userData'), 'workspace'); // the cwd of every claude process
 const claudePath = () => findClaude(process.env, fs.existsSync, os.homedir());
 const transcriptOf = (sessionId: string) => transcriptPath(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), workspace, sessionId);
+// Claude Code starts the approval server as this same executable in Node mode (no separate Node needed).
+const approvalPipe = new ApprovalPipe();
+const approvals = new Approvals(approvalPipe, { command: process.execPath, args: [path.join(__dirname, '../approval/server.js')] }, async () => ({
+  allow: false,
+  message: 'Approvals are not ready yet.', // shortcut: replaced by the approval card in M2.6-3.3
+}));
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -186,6 +193,9 @@ const bridge: Bridge =
         mode: (id) => chats.find((c) => c.id === id)?.mode ?? 'chat',
         model: () => loadSettings().model,
         tools: () => toolSettings(loadSettings()),
+        rules: () => approvalRules(loadSettings()),
+        approvals,
+        runConfigFile: path.join(app.getPath('userData'), 'mcp-run.json'),
         instructions: () => {
           try {
             return fs.readFileSync(path.join(app.getPath('userData'), 'instructions.md'), 'utf8');
@@ -440,6 +450,8 @@ if (!app.requestSingleInstanceLock()) {
     if (!claude) console.log('Claude Code: not installed');
     else void readVersion(claude).then((v) => console.log(`Claude Code: ${claude} (${v ?? 'unknown version'})`));
     chats = loadChats();
+    // Without the pipe every approval request is denied (the server cannot reach main), so nothing hangs.
+    approvalPipe.listen().catch((err) => console.error('Could not open the approval pipe:', err));
     // The renderer is untrusted input: check types and cap sizes before storing.
     ipcMain.on('chat:message', (_e, id: unknown, text: unknown, retry: unknown) => {
       if (!isChatId(id) || typeof text !== 'string') return;
@@ -541,6 +553,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', () => {
     isQuitting = true;
     inflight?.abort(); // kills a running claude process so none outlives the app
+    approvalPipe.dispose();
     destroyTray();
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());

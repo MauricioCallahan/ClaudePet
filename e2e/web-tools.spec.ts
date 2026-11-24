@@ -58,3 +58,16 @@ test('with both off, no tools are offered, and the empty value survives the .cmd
   expect(flag(args, '--tools')).toBe('');
   expect(args).not.toContain('--allowedTools');
 });
+
+test('an ask rule keeps the tool offered but not allowed, and passes the approval tool and its run config', async () => {
+  setTools({ approval: { WebFetch: 'ask' } });
+  const args = await started();
+  expect(flag(args, '--tools')).toBe('WebSearch,WebFetch');
+  expect(flag(args, '--allowedTools')).toBe('WebSearch');
+  expect(flag(args, '--permission-prompt-tool')).toBe('mcp__claudepet__approve');
+  expect(args).not.toContain('--permission-prompts');
+  expect(flag(args, '--mcp-config')).toBe(path.join('..', 'mcp-run.json')); // relative to cwd, like the prompt file
+  const run = JSON.parse(fs.readFileSync(path.join(profile, 'mcp-run.json'), 'utf8'));
+  expect(Object.keys(run.mcpServers)).toEqual(['claudepet']);
+  expect(run.mcpServers.claudepet.env.ELECTRON_RUN_AS_NODE).toBe('1');
+});

@@ -99,6 +99,21 @@ Rules in `%APPDATA%\ClaudePet\settings.json` decide before any card shows. A rul
 { "tools": { "approval": { "WebFetch": "ask", "mcp__github": "allow", "mcp__github__create_issue": "ask" } } }
 ```
 
+## Your MCP servers
+
+Put your own [MCP](https://modelcontextprotocol.io) servers in `%APPDATA%\ClaudePet\mcp.json`, in the same shape as Claude Code's `.mcp.json`, so the example in a server's README pastes straight in. A server is a local program (`command`, `args`, `env`) or a web address (`"type": "http"` or `"sse"`, `url`, `headers`):
+
+```json
+{
+  "mcpServers": {
+    "files": { "command": "node", "args": ["C:\\tools\\my-server\\index.js"], "env": { "API_KEY": "${MY_API_KEY}" } },
+    "notes": { "type": "http", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${NOTES_TOKEN}" } }
+  }
+}
+```
+
+On Windows, a server that starts with `npx` (a `.cmd` file, not a program) may show as `failed` in `bridge.log` (in the same folder); if it does, try `"command": "cmd", "args": ["/c", "npx", …]`. A name uses lowercase letters, digits, `-` and single `_`, and can't be `claudepet`. Prefer `${VAR}` (read from your environment) over pasting a token into the file. A server whose tools ask first shows the same approval card as any other tool, and the rules above work with its name (`mcp__files`).
+
 ## Known issues
 - The chat box opens as a small bar under the pet and grows into the chat as you talk. If you prefer the full-size box, set `"ui": { "compact": false }` in `%APPDATA%\ClaudePet\settings.json` and restart.
 - ClaudePet claims **Ctrl+,** while it runs, so apps that use it for their own Settings (for example VS Code) lose that shortcut. To use another key, set `"hotkey"` (an [Electron accelerator](https://www.electronjs.org/docs/latest/api/accelerator), e.g. `"Alt+Space"`) in `%APPDATA%\ClaudePet\settings.json` and restart. A settings panel will replace this in v0.2.

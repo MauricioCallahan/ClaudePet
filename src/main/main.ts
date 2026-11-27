@@ -8,7 +8,8 @@ import { ClaudeBridge, findClaude, readVersion } from './claudeBridge';
 import { BridgeError, logLine, type ReplyError } from './errors';
 import { anchorOnScreen, compactBounds, fitPosition, type Rect } from './bounds';
 import { isWebUrl } from './links';
-import { approvalRules, DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
+import { parseMcpConfig, statusLine, type McpServer, type McpStatus } from './mcpConfig';
+import { approvalRules, connectorSettings, DEFAULT_PET_ID, loadSettings, petSettings, saveSettings, toolSettings, uiSettings } from './settings';
 import { ApprovalPipe, Approvals } from './approvals';
 import { createPet, PET_SIZE, playRow, setPet, setPetEnabled } from './petWindow';
 import { createMood, STATE_ROW } from './petState';
@@ -182,6 +183,55 @@ const approvals = new Approvals(
   },
   { rules: () => approvalRules(loadSettings()) },
 );
+// The servers in mcp.json that are not turned off, read on every send. No file means none; a broken file also means none
+// (the old servers stay out until it is fixed) and says why in bridge.log, without the file's contents.
+let knownServers: Record<string, McpServer> = {}; // everything in mcp.json, for hiding secrets in the log
+let fileProblem = ''; // the last problem with mcp.json that was logged, so a typo is logged once, not on every message
+function enabledServers(): Record<string, McpServer> {
+  const problem = (p: string): Record<string, McpServer> => {
+    if (p && p !== fileProblem) logMcp(p); // '' means no problem (no file)
+    fileProblem = p;
+    return {};
+  };
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(app.getPath('userData'), 'mcp.json'), 'utf8');
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? problem('') : problem(`could not read mcp.json: ${(err as Error).message}`);
+  }
+  const config = parseMcpConfig(text);
+  if ('error' in config) return problem(config.error);
+  fileProblem = '';
+  knownServers = config.servers;
+  const connectors = connectorSettings(loadSettings());
+  return Object.fromEntries(Object.entries(config.servers).filter(([name]) => connectors[name] !== false));
+}
+
+function logMcp(message: string): void {
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'bridge.log'), `${new Date().toISOString()} mcp ${message.replace(/\s+/g, ' ').trim().slice(0, 300)}\n`);
+  } catch {
+    // a log that cannot be written must never break the reply
+  }
+}
+
+// The latest status of each server, from the last reply's init line. Only names and statuses are kept (and read by e2e).
+const mcpState = new Map<string, McpStatus>();
+export const mcpStatus = (): McpStatus[] => [...mcpState.values()];
+
+// Each reply's list replaces the last; a server that did not connect is logged once, when its status changes.
+function onMcpStatus(list: McpStatus[]): void {
+  const before = new Map(mcpState);
+  mcpState.clear();
+  for (const s of list) {
+    mcpState.set(s.name, s);
+    const was = before.get(s.name);
+    if (was?.status === s.status && was.error === s.error) continue;
+    const line = statusLine(s, knownServers[s.name]);
+    if (line) logMcp(line);
+  }
+}
+
 // CLAUDEPET_BRIDGE=fake keeps the echo bridge for e2e tests and UI work without spending usage.
 const bridge: Bridge =
   process.env.CLAUDEPET_BRIDGE === 'fake'
@@ -202,6 +252,8 @@ const bridge: Bridge =
         model: () => loadSettings().model,
         tools: () => toolSettings(loadSettings()),
         rules: () => approvalRules(loadSettings()),
+        servers: enabledServers,
+        onMcpStatus,
         approvals,
         runConfigFile: path.join(app.getPath('userData'), 'mcp-run.json'),
         instructions: () => {

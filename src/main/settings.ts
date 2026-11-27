@@ -10,6 +10,7 @@ export interface Settings {
   pet?: { enabled?: unknown; id?: unknown }; // read through petSettings; saveSettings merges shallowly, so save the whole object
   ui?: { compact?: unknown }; // read through uiSettings, once at startup
   tools?: unknown; // read through toolSettings on every send; saveSettings merges shallowly, so save the whole object
+  connectors?: unknown; // { "<server in mcp.json>": { enabled } }, read through connectorSettings on every send; save the whole object
 }
 
 export type ToolSettings = { webSearch: boolean; webFetch: boolean };
@@ -42,16 +43,23 @@ export function toolSettings(s: Settings): ToolSettings {
   return { webSearch: t.webSearch !== false, webFetch: t.webFetch !== false };
 }
 
+// Which mcp.json servers the user turned off: a server is on unless its "enabled" is a real false (a typo leaves it on).
+export function connectorSettings(s: Settings): Record<string, boolean> {
+  const c = s.connectors && typeof s.connectors === 'object' && !Array.isArray(s.connectors) ? Object.entries(s.connectors) : [];
+  return Object.fromEntries(c.map(([name, v]) => [name, (v as { enabled?: unknown } | null)?.enabled !== false]));
+}
+
 export type Rule = 'allow' | 'ask' | 'deny';
 export type Rules = Record<string, Rule>;
 const RULES: readonly unknown[] = ['allow', 'ask', 'deny'];
 
 // tools.approval: { "<tool or mcp__server>": "allow" | "ask" | "deny" }. A name can become an --allowedTools argument
-// through a shell, so only plain tool names are kept; anything else in the file is dropped, never passed on.
+// through a shell, so only plain tool names are kept (letters, digits, "_" and "-", never starting with "-", so a flag is
+// impossible); anything else in the file is dropped, never passed on.
 export function approvalRules(s: Settings): Rules {
   const t = s.tools && typeof s.tools === 'object' ? (s.tools as { approval?: unknown }).approval : undefined;
   if (!t || typeof t !== 'object' || Array.isArray(t)) return {};
-  return Object.fromEntries(Object.entries(t).filter(([name, rule]) => /^[A-Za-z0-9_]{1,128}$/.test(name) && RULES.includes(rule))) as Rules;
+  return Object.fromEntries(Object.entries(t).filter(([name, rule]) => /^[A-Za-z0-9][\w-]{0,127}$/.test(name) && RULES.includes(rule))) as Rules;
 }
 
 const file = () => path.join(app.getPath('userData'), 'settings.json');

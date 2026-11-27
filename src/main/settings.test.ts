@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { approvalRules, DEFAULT_PET_ID, parseSettings, petSettings, toolSettings, uiSettings } from './settings';
+import { approvalRules, connectorSettings, DEFAULT_PET_ID, parseSettings, petSettings, toolSettings, uiSettings } from './settings';
 
 test('returns a valid settings object', () => {
   assert.deepEqual(parseSettings('{"x":1,"y":2}'), { x: 1, y: 2 });
@@ -56,10 +56,17 @@ test('webSearch false turns off search only', () => {
   assert.deepEqual(toolSettings({ tools: { webSearch: false } }), { webSearch: false, webFetch: true });
 });
 
+test('a connector is off only for a real enabled: false; anything else leaves it on', () => {
+  assert.deepEqual(connectorSettings({ connectors: { a: { enabled: false }, b: { enabled: true }, c: { enabled: 'false' }, d: {}, e: null, f: 5 } }), { a: false, b: true, c: true, d: true, e: true, f: true });
+  for (const connectors of [undefined, null, 'off', ['a'], 5]) assert.deepEqual(connectorSettings({ connectors }), {});
+});
 test('approval rules keep plain tool names with allow, ask or deny', () => {
   const rules = { WebFetch: 'ask', mcp__github: 'allow', mcp__github__create_issue: 'deny' };
   assert.deepEqual(approvalRules({ tools: { approval: rules } }), rules);
   assert.deepEqual(approvalRules({}), {});
+});
+test('approval rules keep a hyphen inside a name (mcp__my-server) but not at the start', () => {
+  assert.deepEqual(approvalRules({ tools: { approval: { 'mcp__my-server': 'allow', '-x': 'allow' } } }), { 'mcp__my-server': 'allow' });
 });
 test('approval rules drop unsafe names and unknown values, and a bad approval setting gives none', () => {
   const bad = { 'Web Fetch': 'allow', 'x & calc': 'allow', '--dangerously-skip-permissions': 'allow', '': 'allow', WebSearch: 'yes', Bash: true, WebFetch: 'ask' };

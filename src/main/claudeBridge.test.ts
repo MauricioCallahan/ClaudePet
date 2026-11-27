@@ -396,3 +396,30 @@ test('parseLine: the init line carries the MCP servers and how each started, nex
   assert.deepEqual(parseLine(JSON.stringify({ ...init, mcp_servers: undefined, mcp_server_errors: undefined })), { sessionId: 's' });
   assert.equal(parseLine(JSON.stringify({ type: 'system', subtype: 'init' })), null);
 });
+
+test('the MCP status of a reply is reported in chat mode only, since code mode lists the user\'s own servers', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claudepet-status-'));
+  try {
+    const seen = async (mode: 'chat' | 'code') => {
+      let calls = 0;
+      const b = new ClaudeBridge({
+        exe: () => path.resolve('e2e/fixtures/fake-claude.cmd'),
+        cwd: path.join(dir, 'workspace'),
+        sessions: { get: () => undefined, set: () => {} },
+        mode: () => mode,
+        model: () => undefined,
+        tools: () => ({ webSearch: false, webFetch: false }),
+        onMcpStatus: () => calls++,
+        instructions: () => undefined,
+        promptFile: path.join(dir, 'prompt.md'),
+        idleMs: 30_000,
+      });
+      for await (const _ of b.send('c', 'hi', new AbortController().signal));
+      return calls;
+    };
+    assert.equal(await seen('chat'), 1);
+    assert.equal(await seen('code'), 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

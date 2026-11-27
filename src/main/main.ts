@@ -186,19 +186,22 @@ const approvals = new Approvals(
 // The servers in mcp.json that are not turned off, read on every send. No file means none; a broken file also means none
 // (the old servers stay out until it is fixed) and says why in bridge.log, without the file's contents.
 let knownServers: Record<string, McpServer> = {}; // everything in mcp.json, for hiding secrets in the log
+let fileProblem = ''; // the last problem with mcp.json that was logged, so a typo is logged once, not on every message
 function enabledServers(): Record<string, McpServer> {
+  const problem = (p: string): Record<string, McpServer> => {
+    if (p && p !== fileProblem) logMcp(p); // '' means no problem (no file)
+    fileProblem = p;
+    return {};
+  };
   let text = '';
   try {
     text = fs.readFileSync(path.join(app.getPath('userData'), 'mcp.json'), 'utf8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') logMcp(`could not read mcp.json: ${(err as Error).message}`);
-    return {};
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? problem('') : problem(`could not read mcp.json: ${(err as Error).message}`);
   }
   const config = parseMcpConfig(text);
-  if ('error' in config) {
-    logMcp(config.error);
-    return {};
-  }
+  if ('error' in config) return problem(config.error);
+  fileProblem = '';
   knownServers = config.servers;
   const connectors = connectorSettings(loadSettings());
   return Object.fromEntries(Object.entries(config.servers).filter(([name]) => connectors[name] !== false));

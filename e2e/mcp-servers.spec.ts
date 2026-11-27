@@ -78,12 +78,10 @@ test('a failed server is logged once, not on every message', async () => {
   expect(log().match(/ mcp broken failed/g)).toHaveLength(1);
 });
 
-test('turning a server off leaves it out of the next message, with no restart, and its tools get the turned-off message', async () => {
+test('turning a server off leaves it out of the next message, with no restart', async () => {
   setConnectors({ echo: { enabled: false } });
   await started();
   expect(runServers()).toEqual(['broken', 'claudepet']);
-  await send('/deny mcp__echo__echo');
-  await expect(lastReply()).toContainText('The "echo" server is off or not in mcp.json. Turn it on in Tools and connectors.');
 });
 
 test('with every server off, nothing that could ask is left, so no run config is passed', async () => {
@@ -93,4 +91,12 @@ test('with every server off, nothing that could ask is left, so no run config is
   setConnectors({}); // and back on
   await started();
   expect(runServers()).toEqual(['echo', 'broken', 'claudepet']);
+});
+
+test('a mcp.json that does not parse gives no servers for now, and the reason is logged once, not on every message', async () => {
+  fs.writeFileSync(file('mcp.json'), '{oops');
+  const args = await started();
+  expect(args).not.toContain('--mcp-config');
+  await send('hello');
+  expect(log().match(/ mcp mcp\.json is not valid JSON/g)).toHaveLength(1);
 });

@@ -307,7 +307,7 @@ export class ClaudeBridge implements Bridge {
         if (unanswered) error = deniedMessage(unanswered.toolName);
         if (ev?.resetsAt) resetsAt = ev.resetsAt;
         if (ev?.sessionId) this.opts.sessions.set(chatId, ev.sessionId);
-        if (ev?.mcp) this.opts.onMcpStatus?.(ev.mcp);
+        if (ev?.mcp && mode === 'chat') this.opts.onMcpStatus?.(ev.mcp); // code mode lists the user's own servers, not ours
         for (const tool of ev?.tools ?? []) yield { tool };
         for (const toolDone of ev?.done ?? []) yield { toolDone };
         if (ev?.chunk) yield ev.chunk;

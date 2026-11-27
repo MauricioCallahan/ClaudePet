@@ -106,13 +106,13 @@ Put your own [MCP](https://modelcontextprotocol.io) servers in `%APPDATA%\Claude
 ```json
 {
   "mcpServers": {
-    "files": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\you\\Documents"] },
+    "files": { "command": "node", "args": ["C:\\tools\\my-server\\index.js"], "env": { "API_KEY": "${MY_API_KEY}" } },
     "notes": { "type": "http", "url": "https://example.com/mcp", "headers": { "Authorization": "Bearer ${NOTES_TOKEN}" } }
   }
 }
 ```
 
-A name uses lowercase letters, digits, `-` and single `_`, and can't be `claudepet`. Prefer `${VAR}` (read from your environment) over pasting a token into the file. A server whose tools ask first shows the same approval card as any other tool, and the rules above work with its name (`mcp__files`).
+On Windows, a server that starts with `npx` (a `.cmd` file, not a program) may show as `failed` in `bridge.log` (in the same folder); if it does, try `"command": "cmd", "args": ["/c", "npx", …]`. A name uses lowercase letters, digits, `-` and single `_`, and can't be `claudepet`. Prefer `${VAR}` (read from your environment) over pasting a token into the file. A server whose tools ask first shows the same approval card as any other tool, and the rules above work with its name (`mcp__files`).
 
 ## Known issues
 - The chat box opens as a small bar under the pet and grows into the chat as you talk. If you prefer the full-size box, set `"ui": { "compact": false }` in `%APPDATA%\ClaudePet\settings.json` and restart.
